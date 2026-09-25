@@ -1,0 +1,19 @@
+{
+  "name": "rippletrack-demo",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "vitest": "^5.0.2"
+  },
+  "dependencies": {
+    "better-sqlite3": "^13.0.3"
+  }
+}
