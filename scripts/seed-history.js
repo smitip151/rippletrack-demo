@@ -16,6 +16,15 @@
 const path = require('path');
 const fs   = require('fs');
 
+// Load the real ripple map so seeded runs display it when viewed
+const RIPPLE_MAP_PATH = path.join(__dirname, '..', 'plan', 'ripple_map.json');
+let RIPPLE_MAP_JSON = '{}';
+try {
+  RIPPLE_MAP_JSON = fs.readFileSync(RIPPLE_MAP_PATH, 'utf8').trim();
+} catch (_) {
+  // plan/ripple_map.json not found — ripple map will be empty for seeded rows
+}
+
 let Database;
 try {
   Database = require('better-sqlite3');
@@ -42,7 +51,7 @@ if (!dbExists) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Ensure all run-history columns exist (idempotent ALTER TABLE)
 // ─────────────────────────────────────────────────────────────────────────────
-const newCols = ['run_id', 'blast_radius_files', 'migration_status', 'test_result', 'timestamp'];
+const newCols = ['run_id', 'blast_radius_files', 'migration_status', 'test_result', 'timestamp', 'ripple_map_json'];
 for (const col of newCols) {
   try {
     db.exec(`ALTER TABLE ripple_signals ADD COLUMN ${col} TEXT;`);
@@ -211,6 +220,7 @@ const stmt = db.prepare(`
     test_result,
     timestamp,
     ripple_map_summary,
+    ripple_map_json,
     status,
     created_at
   ) VALUES (
@@ -223,6 +233,7 @@ const stmt = db.prepare(`
     @test_result,
     @timestamp,
     @ripple_map_summary,
+    @ripple_map_json,
     @status,
     @created_at
   )
@@ -243,6 +254,7 @@ const insertAll = db.transaction((rows) => {
       test_result:          row.test_result,
       timestamp:            timestamp,
       ripple_map_summary:   '{}',
+      ripple_map_json:      RIPPLE_MAP_JSON,
       status:               'MOUNTED_IN_CI',
       created_at:           timestamp,
     });
@@ -259,6 +271,16 @@ const insertAll = db.transaction((rows) => {
 
 console.log('\nRippleTrack — seeding historical CI run data...\n');
 const { inserted, skipped } = insertAll(rows);
+
+// Backfill ripple_map_json for any existing seed rows that predate this column
+const backfill = db.prepare(`
+  UPDATE ripple_signals
+  SET ripple_map_json = ?
+  WHERE id LIKE 'seed-%' AND (ripple_map_json IS NULL OR ripple_map_json = '{}')
+`).run(RIPPLE_MAP_JSON);
+if (backfill.changes > 0) {
+  console.log(`  ✔ backfilled ripple_map_json for ${backfill.changes} existing seed row(s)`);
+}
 
 const total = db.prepare(`SELECT COUNT(*) AS n FROM ripple_signals WHERE run_id IS NOT NULL`).get().n;
 console.log(`\nDone. Inserted: ${inserted}, skipped: ${skipped}. Total CI run rows in DB: ${total}\n`);

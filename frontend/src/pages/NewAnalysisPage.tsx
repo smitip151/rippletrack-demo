@@ -8,18 +8,18 @@ interface Props {
 
 const AGENT_NAMES = ['Contract Detective', 'Code Archaeologist', 'Test Archaeologist'] as const;
 const AGENT_ICONS: Record<string, string> = {
-  'Contract Detective':   '🔍',
-  'Code Archaeologist':  '⛏',
-  'Test Archaeologist':  '🧪',
+  'Contract Detective':  '🔍',
+  'Code Archaeologist': '⛏',
+  'Test Archaeologist': '🧪',
 };
 const AGENT_DESCS: Record<string, string> = {
-  'Contract Detective':   'Parsing PRD — extracting field constraints, optionality, defaults',
-  'Code Archaeologist':  'Tracing model into downstream consumers via AST',
-  'Test Archaeologist':  'Scanning fixtures and mocks for staleness',
+  'Contract Detective':  'Parsing PRD — extracting field constraints, optionality, defaults',
+  'Code Archaeologist': 'Tracing model into downstream consumers via AST',
+  'Test Archaeologist': 'Scanning fixtures and mocks for staleness',
 };
 
 function riskBadgeClass(band: string) {
-  if (band === 'High') return 'badge badge-high';
+  if (band === 'High')   return 'badge badge-high';
   if (band === 'Medium') return 'badge badge-medium';
   return 'badge badge-low';
 }
@@ -59,7 +59,6 @@ export default function NewAnalysisPage({ onRunStarted }: Props) {
         if (status.status === 'complete' || status.status === 'error') {
           if (pollRef.current) clearInterval(pollRef.current);
           if (status.status === 'complete') {
-            // Short delay so the user sees all agents as done
             setTimeout(() => onRunStarted(runId), 800);
           }
         }
@@ -117,7 +116,8 @@ export default function NewAnalysisPage({ onRunStarted }: Props) {
 
   return (
     <div>
-      <div className="page-header">
+      {/* ── Checkered-flag page header ── */}
+      <div className="f1-page-header">
         <h1>New Analysis</h1>
         <p>Select a PRD from the library to run RippleTrack, or use Advanced Mode to upload your own.</p>
       </div>
@@ -129,19 +129,29 @@ export default function NewAnalysisPage({ onRunStarted }: Props) {
         </div>
       )}
 
-      {/* Live progress overlay */}
+      {/* Live progress panel */}
       {agentStatus && (
         <div className="card" style={{ marginBottom: 24 }}>
           <div className="card-title">
-            {isRunning ? '⏳ Analysis in progress…' : agentStatus.status === 'error' ? '✗ Analysis failed' : '✓ Analysis complete'}
+            {isRunning
+              ? 'Analysis in progress'
+              : agentStatus.status === 'error'
+              ? '✗ Analysis failed'
+              : '✓ Analysis complete'}
           </div>
+
+          {/* Checkered-flag sweep bar while running */}
+          {isRunning && <div className="ci-progress-bar" style={{ marginBottom: 16 }} />}
+
           <div className="agents-grid">
             {AGENT_NAMES.map(name => {
               const state = agentStatus.agents[name];
               return (
                 <div key={name} className={`agent-card ${state}`}>
                   <div className="agent-icon">
-                    {state === 'running' ? <div className="spinner" /> : AGENT_ICONS[name]}
+                    {state === 'running'
+                      ? <div className="spinner" />
+                      : AGENT_ICONS[name]}
                   </div>
                   <div className="agent-name">{name}</div>
                   <div className="agent-status">
@@ -153,12 +163,13 @@ export default function NewAnalysisPage({ onRunStarted }: Props) {
               );
             })}
           </div>
+
           {agentStatus.status === 'error' && (
             <p className="text-red mt-8">{agentStatus.error}</p>
           )}
           {isRunning && (
-            <p className="text-muted mt-8" style={{ fontSize: 12 }}>
-              Run ID: {activeRunId || '—'} · Polling for updates…
+            <p className="text-muted mt-8" style={{ fontSize: 11, fontFamily: 'var(--font-mono)' }}>
+              RUN ID: {activeRunId || '—'} · POLLING…
             </p>
           )}
         </div>
@@ -166,7 +177,10 @@ export default function NewAnalysisPage({ onRunStarted }: Props) {
 
       {/* PRD Library */}
       {loading ? (
-        <div className="text-muted">Loading PRD library…</div>
+        <div className="flex items-center gap-12" style={{ color: 'var(--muted-light)', padding: 20 }}>
+          <div className="spinner" />
+          <span>Loading PRD library…</span>
+        </div>
       ) : (
         <>
           <div className="card-title" style={{ marginBottom: 14 }}>
@@ -178,21 +192,25 @@ export default function NewAnalysisPage({ onRunStarted }: Props) {
                 <div className="prd-card-header">
                   <div>
                     <div className="prd-card-title">{prd.filename}</div>
-                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{prd.target_repo_id}</div>
+                    <div style={{ fontSize: 11, color: 'var(--muted-light)', marginTop: 2, fontFamily: 'var(--font-mono)' }}>
+                      {prd.target_repo_id}
+                    </div>
                   </div>
                   <span className={riskBadgeClass(prd.risk_band)}>{prd.risk_band}</span>
                 </div>
                 <div className="prd-card-desc">{prd.short_description}</div>
                 <div className="prd-card-footer">
-                  <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-                    {prd.has_full_analysis ? '● Full analysis' : '● Synthetic analysis'}
+                  <span style={{ fontSize: 11, color: 'var(--muted-light)', fontFamily: 'var(--font-display)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                    {prd.has_full_analysis ? '● Full' : '● Synthetic'}
                   </span>
                   <button
                     className="btn btn-primary btn-sm"
                     disabled={!!isRunning}
                     onClick={() => handleRunPrd(prd)}
                   >
-                    {runningPrdId === prd.id && isRunning ? '⏳ Running…' : '▶ Run RippleTrack'}
+                    {runningPrdId === prd.id && isRunning
+                      ? <><span className="spinner" style={{ width: 12, height: 12 }} /> Running…</>
+                      : '▶ Run'}
                   </button>
                 </div>
               </div>
@@ -201,13 +219,16 @@ export default function NewAnalysisPage({ onRunStarted }: Props) {
         </>
       )}
 
+      {/* ── Race-track divider before advanced section ── */}
+      <div className="f1-track-divider" />
+
       {/* Advanced Mode */}
-      <div className="advanced-section" style={{ marginTop: 28 }}>
+      <div className="advanced-section" style={{ marginTop: 0 }}>
         <div className="advanced-header" onClick={() => setAdvancedOpen(o => !o)}>
-          <span style={{ fontWeight: 600, fontSize: 13 }}>
-            Advanced Mode — Upload custom PRD
+          <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 12, letterSpacing: '0.10em', textTransform: 'uppercase' }}>
+            Advanced Mode — Upload Custom PRD
           </span>
-          <span style={{ fontSize: 12, color: 'var(--muted)' }}>{advancedOpen ? '▲ collapse' : '▼ expand'}</span>
+          <span style={{ fontSize: 11, color: 'var(--muted)' }}>{advancedOpen ? '▲ collapse' : '▼ expand'}</span>
         </div>
         {advancedOpen && (
           <div className="advanced-body">
@@ -238,7 +259,9 @@ export default function NewAnalysisPage({ onRunStarted }: Props) {
             </div>
 
             <div className="flex items-center gap-12 mt-12">
-              <label style={{ fontSize: 13, color: 'var(--muted)' }}>Target repo:</label>
+              <label style={{ fontSize: 12, color: 'var(--muted-light)', fontFamily: 'var(--font-display)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                Target repo:
+              </label>
               <select value={advancedRepo} onChange={e => setAdvancedRepo(e.target.value)}>
                 {repos.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
               </select>
@@ -247,7 +270,9 @@ export default function NewAnalysisPage({ onRunStarted }: Props) {
                 disabled={!advancedFile || !!isRunning || advancedRunning}
                 onClick={handleAdvancedRun}
               >
-                {advancedRunning && isRunning ? '⏳ Running…' : '▶ Run Advanced Analysis'}
+                {advancedRunning && isRunning
+                  ? <><span className="spinner" style={{ width: 14, height: 14 }} /> Running…</>
+                  : '▶ Run Advanced Analysis'}
               </button>
             </div>
           </div>

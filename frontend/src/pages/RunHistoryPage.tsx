@@ -43,16 +43,67 @@ export default function RunHistoryPage({ onOpenRun }: Props) {
   const SortIcon = ({ key: k }: { key: SortKey }) =>
     sortKey === k ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ' ⇅';
 
-  if (loading) return <div className="text-muted">Loading run history…</div>;
+  if (loading) return (
+    <div className="flex items-center gap-12" style={{ color: 'var(--muted-light)', padding: 40 }}>
+      <div className="spinner" />
+      <span>Loading run history…</span>
+    </div>
+  );
+
+  // Top-3 runs by risk score (highest first) for the podium widget
+  const top3 = [...runs]
+    .sort((a, b) => b.risk_score - a.risk_score)
+    .slice(0, 3);
+
+  // Podium display order: 2nd place left, 1st place centre, 3rd place right
+  const podiumOrder = [top3[1], top3[0], top3[2]].filter(Boolean);
+  const posMap: Record<number, 1 | 2 | 3> = { 0: 2, 1: 1, 2: 3 };
 
   return (
     <div>
-      <div className="page-header">
+      {/* ── Finish-line hero header ── */}
+      <div className="f1-finish-banner">
         <h1>Run History</h1>
         <p>{runs.length} total runs recorded in the Signal Registry.</p>
       </div>
 
       {error && <div className="warning-banner" style={{ marginBottom: 16 }}>⚠ {error}</div>}
+
+      {/* ── Podium: top-3 highest-risk runs ── */}
+      {runs.length >= 2 && (
+        <div className="card" style={{ marginBottom: 20 }}>
+          <div className="card-title" style={{ marginBottom: 12 }}>
+            {/* Pit-stop label */}
+            <span className="f1-pit-label">
+              {/* Trophy SVG icon */}
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M8 11v3M5 14h6M3 2h10v5a5 5 0 0 1-10 0V2z" />
+                <path d="M3 5H1a2 2 0 0 0 2 2M13 5h2a2 2 0 0 1-2 2" />
+              </svg>
+              Top Risk — Podium
+            </span>
+          </div>
+          <div className="f1-podium">
+            {podiumOrder.map((run, idx) => {
+              const pos = posMap[idx] as 1 | 2 | 3;
+              const label = run.prd_id || run.feature_ticket_id || run.run_id?.slice(0, 8) || '—';
+              return (
+                <div key={run.run_id || idx} className="f1-podium-step" data-pos={String(pos)}>
+                  <div className="f1-podium-pos">{pos}</div>
+                  <div className="f1-podium-label" title={label}>
+                    {label}
+                    <br />
+                    <span style={{ color: run.risk_score > 60 ? 'var(--risk-high-text)' : run.risk_score > 30 ? 'var(--risk-med-text)' : 'var(--risk-low-text)', fontWeight: 700 }}>
+                      {run.risk_score}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="f1-track-divider" style={{ margin: '4px 0 0' }} />
+        </div>
+      )}
 
       {runs.length === 0 ? (
         <div className="card text-muted" style={{ textAlign: 'center', padding: 40 }}>

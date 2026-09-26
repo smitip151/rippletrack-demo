@@ -96,6 +96,26 @@ function getRunFromDb(runId) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Normalize a ripple map: derive edges from node children if edges are absent
+// ─────────────────────────────────────────────────────────────────────────────
+function normalizeRippleMap(map) {
+  const nodes = map.nodes || [];
+  let edges = Array.isArray(map.edges) ? map.edges : [];
+
+  // If the map was stored with children arrays instead of an edges list,
+  // derive edges so the frontend ReactFlow renderer receives { source, target } pairs.
+  if (edges.length === 0) {
+    for (const node of nodes) {
+      for (const child of (node.children || [])) {
+        edges.push({ source: node.id, target: child });
+      }
+    }
+  }
+
+  return { ...map, nodes, edges };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Async run executor — simulates parallel agent progress
 // ─────────────────────────────────────────────────────────────────────────────
 const AGENT_DELAYS_MS = [800, 1200, 900]; // per agent simulated delay
@@ -376,7 +396,9 @@ app.get('/api/runs/:id', (req, res) => {
     return sendError(res, 404, `Run not found: ${runId}`);
   }
 
-  const rippleMap = row.ripple_map_json ? JSON.parse(row.ripple_map_json) : { nodes: [], edges: [] };
+  const rippleMap = normalizeRippleMap(
+    row.ripple_map_json ? JSON.parse(row.ripple_map_json) : { nodes: [], edges: [] }
+  );
 
   // Try to reconstruct result for known signal rows
   let signalPayload = null;

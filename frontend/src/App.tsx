@@ -21,12 +21,26 @@ export default function App() {
   return (
     <div className="layout">
       <nav className="navbar">
-        <div className="navbar-brand">
-          <span>◈</span> RippleTrack
-          <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400, marginLeft: 4 }}>
-            Tifosi CodeWorks
-          </span>
-        </div>
+        {/* ── Brand block — clickable, navigates home ── */}
+        <button
+          className="navbar-brand"
+          onClick={goToAnalyze}
+          aria-label="Go to home — RippleTrack by Tifosi CodeWorks"
+        >
+          {/*
+            Logo slot: replace the div below with:
+              <img src="/logo.png" alt="Tifosi CodeWorks logo" />
+            The slot is 34×34 px with a red background and ◈ placeholder.
+          */}
+          <div className="navbar-logo-slot" aria-hidden="true" />
+
+          <div className="navbar-brand-text">
+            <span className="navbar-brand-product">RippleTrack</span>
+            <span className="navbar-brand-team">Tifosi CodeWorks</span>
+          </div>
+        </button>
+
+        {/* ── Nav links ── */}
         <div className="navbar-links">
           <button
             className={`nav-link${activePage === 'analyze' ? ' active' : ''}`}
@@ -46,7 +60,9 @@ export default function App() {
             </button>
           )}
         </div>
-        <div style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)' }}>
+
+        {/* ── Right meta label ── */}
+        <div className="navbar-meta">
           IBM Bob 2.0 Hackathon
         </div>
       </nav>
