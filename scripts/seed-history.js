@@ -19,10 +19,15 @@ const fs   = require('fs');
 // Load the real ripple map so seeded runs display it when viewed
 const RIPPLE_MAP_PATH = path.join(__dirname, '..', 'plan', 'ripple_map.json');
 let RIPPLE_MAP_JSON = '{}';
+let RISK_BREAKDOWN_JSON = null;
 try {
-  RIPPLE_MAP_JSON = fs.readFileSync(RIPPLE_MAP_PATH, 'utf8').trim();
+  const rippleMapData = JSON.parse(fs.readFileSync(RIPPLE_MAP_PATH, 'utf8'));
+  RIPPLE_MAP_JSON = JSON.stringify(rippleMapData);
+  if (rippleMapData.risk_score_breakdown) {
+    RISK_BREAKDOWN_JSON = JSON.stringify(rippleMapData.risk_score_breakdown);
+  }
 } catch (_) {
-  // plan/ripple_map.json not found — ripple map will be empty for seeded rows
+  // plan/ripple_map.json not found — ripple map and breakdown will be empty for seeded rows
 }
 
 let Database;
@@ -51,7 +56,7 @@ if (!dbExists) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Ensure all run-history columns exist (idempotent ALTER TABLE)
 // ─────────────────────────────────────────────────────────────────────────────
-const newCols = ['run_id', 'blast_radius_files', 'migration_status', 'test_result', 'timestamp', 'ripple_map_json'];
+const newCols = ['run_id', 'blast_radius_files', 'migration_status', 'test_result', 'timestamp', 'ripple_map_json', 'risk_breakdown_json'];
 for (const col of newCols) {
   try {
     db.exec(`ALTER TABLE ripple_signals ADD COLUMN ${col} TEXT;`);
@@ -221,6 +226,7 @@ const stmt = db.prepare(`
     timestamp,
     ripple_map_summary,
     ripple_map_json,
+    risk_breakdown_json,
     status,
     created_at
   ) VALUES (
@@ -234,6 +240,7 @@ const stmt = db.prepare(`
     @timestamp,
     @ripple_map_summary,
     @ripple_map_json,
+    @risk_breakdown_json,
     @status,
     @created_at
   )
@@ -255,6 +262,7 @@ const insertAll = db.transaction((rows) => {
       timestamp:            timestamp,
       ripple_map_summary:   '{}',
       ripple_map_json:      RIPPLE_MAP_JSON,
+      risk_breakdown_json:  RISK_BREAKDOWN_JSON,
       status:               'MOUNTED_IN_CI',
       created_at:           timestamp,
     });
@@ -273,13 +281,25 @@ console.log('\nRippleTrack — seeding historical CI run data...\n');
 const { inserted, skipped } = insertAll(rows);
 
 // Backfill ripple_map_json for any existing seed rows that predate this column
-const backfill = db.prepare(`
+const backfillMap = db.prepare(`
   UPDATE ripple_signals
   SET ripple_map_json = ?
   WHERE id LIKE 'seed-%' AND (ripple_map_json IS NULL OR ripple_map_json = '{}')
 `).run(RIPPLE_MAP_JSON);
-if (backfill.changes > 0) {
-  console.log(`  ✔ backfilled ripple_map_json for ${backfill.changes} existing seed row(s)`);
+if (backfillMap.changes > 0) {
+  console.log(`  ✔ backfilled ripple_map_json for ${backfillMap.changes} existing seed row(s)`);
+}
+
+// Backfill risk_breakdown_json for any existing seed rows that are missing it
+if (RISK_BREAKDOWN_JSON) {
+  const backfillBreakdown = db.prepare(`
+    UPDATE ripple_signals
+    SET risk_breakdown_json = ?
+    WHERE id LIKE 'seed-%' AND risk_breakdown_json IS NULL
+  `).run(RISK_BREAKDOWN_JSON);
+  if (backfillBreakdown.changes > 0) {
+    console.log(`  ✔ backfilled risk_breakdown_json for ${backfillBreakdown.changes} existing seed row(s)`);
+  }
 }
 
 const total = db.prepare(`SELECT COUNT(*) AS n FROM ripple_signals WHERE run_id IS NOT NULL`).get().n;
