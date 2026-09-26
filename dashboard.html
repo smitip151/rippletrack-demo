@@ -1,0 +1,806 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>RippleTrack — CI Run Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<style>
+  /* ── Reset & Base ─────────────────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:          #0f1117;
+    --surface:     #1a1d27;
+    --surface2:    #222535;
+    --border:      #2e3148;
+    --text:        #e8eaf0;
+    --muted:       #7b80a0;
+    --accent:      #5b8dee;
+    --green:       #3ecf8e;
+    --red:         #f05c5c;
+    --yellow:      #f5c842;
+    --orange:      #f5934a;
+    --purple:      #9b72f0;
+    --low:         #3ecf8e;
+    --medium:      #f5c842;
+    --high:        #f05c5c;
+    --band-low:    rgba(62, 207, 142, 0.08);
+    --band-high:   rgba(240, 92, 92, 0.10);
+    --ripple-line: rgba(91, 141, 238, 0.35);
+  }
+
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 15px;
+    line-height: 1.6;
+  }
+
+  /* ── Layout ───────────────────────────────────────────────────────────── */
+  .header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 18px 32px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .header-logo {
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    color: var(--accent);
+  }
+  .header-logo span { color: var(--text); font-weight: 400; }
+  .header-sub {
+    font-size: 13px;
+    color: var(--muted);
+    margin-left: auto;
+    text-align: right;
+  }
+  .header-sub strong { color: var(--text); }
+
+  main {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 28px 24px 48px;
+    display: grid;
+    gap: 24px;
+    grid-template-columns: 1fr;
+  }
+
+  /* ── Cards ────────────────────────────────────────────────────────────── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px 28px;
+  }
+  .card-title {
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    margin-bottom: 18px;
+  }
+
+  /* ── Status row (top badges) ─────────────────────────────────────────── */
+  .status-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 16px;
+  }
+  .stat-card {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+  }
+  .stat-label {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+  .stat-value {
+    font-size: 32px;
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: -1px;
+  }
+  .stat-sub {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 5px;
+  }
+
+  /* ── Badge pill ───────────────────────────────────────────────────────── */
+  .badge {
+    display: inline-block;
+    padding: 6px 16px;
+    border-radius: 999px;
+    font-size: 14px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .badge-pass          { background: rgba(62,207,142,.18); color: var(--green); border: 1.5px solid var(--green); }
+  .badge-fail          { background: rgba(240,92,92,.18);  color: var(--red);   border: 1.5px solid var(--red); }
+  .badge-flaky         { background: rgba(245,200,66,.18); color: var(--yellow);border: 1.5px solid var(--yellow); }
+  .badge-applied       { background: rgba(62,207,142,.18); color: var(--green); border: 1.5px solid var(--green); }
+  .badge-pending       { background: rgba(245,200,66,.18); color: var(--yellow);border: 1.5px solid var(--yellow); }
+  .badge-failed        { background: rgba(240,92,92,.18);  color: var(--red);   border: 1.5px solid var(--red); }
+  .badge-rolled_back   { background: rgba(155,114,240,.18);color: var(--purple);border: 1.5px solid var(--purple); }
+  .badge-unknown       { background: rgba(123,128,160,.18);color: var(--muted); border: 1.5px solid var(--muted); }
+
+  /* risk score colour via JS */
+  .risk-low    { color: var(--low); }
+  .risk-medium { color: var(--medium); }
+  .risk-high   { color: var(--high); }
+
+  /* ── Charts grid ──────────────────────────────────────────────────────── */
+  .charts-grid {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 24px;
+  }
+  @media (max-width: 900px) {
+    .charts-grid { grid-template-columns: 1fr; }
+  }
+  .chart-wrap {
+    position: relative;
+    height: 300px;
+  }
+
+  /* ── Before/After annotation ─────────────────────────────────────────── */
+  .before-after-strip {
+    display: flex;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    height: 32px;
+    align-items: stretch;
+    margin-bottom: 10px;
+  }
+  .ba-before {
+    background: rgba(240,92,92,.12);
+    color: var(--red);
+    border-right: 2px solid var(--accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+  .ba-after {
+    background: rgba(62,207,142,.08);
+    color: var(--green);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+  .ba-marker {
+    width: 2px;
+    background: var(--accent);
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .ba-marker::after {
+    content: 'RT';
+    position: absolute;
+    white-space: nowrap;
+    font-size: 9px;
+    font-weight: 800;
+    color: var(--accent);
+    background: var(--surface);
+    padding: 1px 3px;
+    border-radius: 3px;
+    top: -18px;
+  }
+
+  /* ── Blast radius map ─────────────────────────────────────────────────── */
+  .file-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .file-item {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    padding: 10px 14px;
+    font-size: 13px;
+    font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .file-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .file-dot-risk  { background: var(--red); }
+  .file-dot-ok    { background: var(--green); }
+  .file-empty {
+    color: var(--muted);
+    font-size: 14px;
+    padding: 12px 0;
+    text-align: center;
+  }
+
+  /* ── Loading / error ─────────────────────────────────────────────────── */
+  .loading {
+    text-align: center;
+    padding: 80px;
+    font-size: 18px;
+    color: var(--muted);
+  }
+  .error-banner {
+    background: rgba(240,92,92,.12);
+    border: 1px solid var(--red);
+    border-radius: 10px;
+    padding: 20px 24px;
+    color: var(--red);
+    font-size: 15px;
+    line-height: 1.7;
+  }
+  .error-banner code {
+    background: rgba(240,92,92,.15);
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-family: monospace;
+    font-size: 13px;
+  }
+
+  /* ── Table ────────────────────────────────────────────────────────────── */
+  .run-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .run-table th {
+    text-align: left;
+    padding: 8px 12px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+  }
+  .run-table td {
+    padding: 9px 12px;
+    border-bottom: 1px solid rgba(46,49,72,.5);
+    vertical-align: middle;
+  }
+  .run-table tr:last-child td { border-bottom: none; }
+  .run-table tr:hover td { background: rgba(255,255,255,.02); }
+  .run-table .ts { color: var(--muted); font-family: monospace; font-size: 12px; }
+  .run-table .run-num { color: var(--muted); font-family: monospace; }
+
+  .divider-label {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 6px 12px;
+    background: rgba(91,141,238,.08);
+    border: 1px solid rgba(91,141,238,.25);
+    border-left: 3px solid var(--accent);
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin: 4px 0;
+  }
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div class="header-logo">Ripple<span>Track</span></div>
+  <div style="font-size:13px;color:var(--muted);border-left:1px solid var(--border);padding-left:16px;">CI Run Dashboard</div>
+  <div class="header-sub" id="refresh-info">Loading...</div>
+</header>
+
+<main id="main-content">
+  <div class="loading">⏳ Fetching run history from API…</div>
+</main>
+
+<script>
+// ─────────────────────────────────────────────────────────────────────────────
+// Config
+// ─────────────────────────────────────────────────────────────────────────────
+const API_BASE = 'http://127.0.0.1:3001';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────────────────
+function riskClass(score) {
+  if (score <= 30) return 'risk-low';
+  if (score <= 60) return 'risk-medium';
+  return 'risk-high';
+}
+
+function riskLabel(score) {
+  if (score <= 30) return 'Low';
+  if (score <= 60) return 'Medium';
+  return 'High';
+}
+
+function badgeClass(value, type) {
+  if (!value) return 'badge-unknown';
+  if (type === 'test') return `badge-${value.toLowerCase()}`;
+  if (type === 'migration') return `badge-${value.toLowerCase()}`;
+  return 'badge-unknown';
+}
+
+function fmtTs(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleString('en-GB', {
+    month: 'short', day: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+    hour12: false
+  });
+}
+
+function shortTs(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+    + '\n' + d.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
+}
+
+// Determine the transition run index (where risk_score drops sharply AND test flips to pass)
+function findTransitionIdx(runs) {
+  // First run where test_result === 'pass' after at least one fail
+  let hadFail = false;
+  for (let i = 0; i < runs.length; i++) {
+    if (runs[i].test_result === 'fail' || runs[i].test_result === 'flaky') hadFail = true;
+    if (hadFail && runs[i].test_result === 'pass') return i;
+  }
+  return -1;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Charts
+// ─────────────────────────────────────────────────────────────────────────────
+Chart.defaults.color = '#7b80a0';
+Chart.defaults.borderColor = '#2e3148';
+Chart.defaults.font.family = '-apple-system, "Segoe UI", system-ui, sans-serif';
+
+function buildRiskChart(ctx, runs, transitionIdx) {
+  const labels = runs.map((r, i) => `#${i + 1}`);
+  const scores = runs.map(r => r.risk_score);
+
+  // Build point colours
+  const pointColors = runs.map(r => {
+    if (r.risk_score <= 30) return '#3ecf8e';
+    if (r.risk_score <= 60) return '#f5c842';
+    return '#f05c5c';
+  });
+
+  // Annotation plugin (inline) — draw a vertical line at transition
+  const transitionPlugin = {
+    id: 'transitionLine',
+    afterDraw(chart) {
+      if (transitionIdx < 0) return;
+      const meta = chart.getDatasetMeta(0);
+      if (!meta.data[transitionIdx]) return;
+      const x = meta.data[transitionIdx].x;
+      const { ctx, chartArea: { top, bottom } } = chart;
+      ctx.save();
+      ctx.setLineDash([5, 4]);
+      ctx.strokeStyle = '#5b8dee';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(x, top);
+      ctx.lineTo(x, bottom);
+      ctx.stroke();
+      // Label
+      ctx.fillStyle = '#5b8dee';
+      ctx.font = 'bold 11px -apple-system, Segoe UI, system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('RippleTrack', x, top + 14);
+      ctx.fillText('introduced', x, top + 27);
+      ctx.restore();
+    }
+  };
+
+  // Band plugin — shade before (red) and after (green) zones
+  const bandPlugin = {
+    id: 'zoneBands',
+    beforeDraw(chart) {
+      if (transitionIdx < 0) return;
+      const meta = chart.getDatasetMeta(0);
+      if (!meta.data[transitionIdx]) return;
+      const x = meta.data[transitionIdx].x;
+      const { ctx, chartArea: { top, bottom, left, right } } = chart;
+      ctx.save();
+      // Before zone
+      ctx.fillStyle = 'rgba(240,92,92,0.06)';
+      ctx.fillRect(left, top, x - left, bottom - top);
+      // After zone
+      ctx.fillStyle = 'rgba(62,207,142,0.06)';
+      ctx.fillRect(x, top, right - x, bottom - top);
+      ctx.restore();
+    }
+  };
+
+  return new Chart(ctx, {
+    type: 'line',
+    plugins: [bandPlugin, transitionPlugin],
+    data: {
+      labels,
+      datasets: [{
+        label: 'Risk Score',
+        data: scores,
+        borderColor: '#5b8dee',
+        borderWidth: 2.5,
+        pointBackgroundColor: pointColors,
+        pointBorderColor: pointColors,
+        pointRadius: 6,
+        pointHoverRadius: 9,
+        tension: 0.35,
+        fill: {
+          target: 'origin',
+          above: 'rgba(91,141,238,0.07)'
+        }
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        y: {
+          min: 0,
+          max: 100,
+          grid: { color: '#2e3148' },
+          ticks: {
+            callback: v => v,
+            stepSize: 20,
+            color: '#7b80a0',
+            font: { size: 12 }
+          },
+          title: { display: true, text: 'Risk Score (0–100)', color: '#7b80a0', font: { size: 12 } }
+        },
+        x: {
+          grid: { color: '#2e3148' },
+          ticks: { color: '#7b80a0', font: { size: 12 } }
+        }
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#1a1d27',
+          borderColor: '#2e3148',
+          borderWidth: 1,
+          titleColor: '#e8eaf0',
+          bodyColor: '#7b80a0',
+          padding: 12,
+          callbacks: {
+            title: (items) => {
+              const idx = items[0].dataIndex;
+              return `Run #${idx + 1} · ${fmtTs(runs[idx].timestamp)}`;
+            },
+            label: (item) => {
+              const run = runs[item.dataIndex];
+              return [
+                ` Risk: ${run.risk_score} (${riskLabel(run.risk_score)})`,
+                ` Test: ${run.test_result || '—'}`,
+                ` Migration: ${run.migration_status || '—'}`,
+              ];
+            }
+          }
+        }
+      }
+    }
+  });
+}
+
+function buildTestChart(ctx, runs) {
+  const passCounts  = runs.map(r => r.test_result === 'pass'  ? 1 : 0);
+  const failCounts  = runs.map(r => r.test_result === 'fail'  ? 1 : 0);
+  const flakyCounts = runs.map(r => r.test_result === 'flaky' ? 1 : 0);
+  const labels = runs.map((_, i) => `#${i + 1}`);
+
+  return new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Pass',
+          data: passCounts,
+          backgroundColor: 'rgba(62,207,142,0.8)',
+          borderColor: '#3ecf8e',
+          borderWidth: 1,
+          borderRadius: 4,
+        },
+        {
+          label: 'Fail',
+          data: failCounts,
+          backgroundColor: 'rgba(240,92,92,0.8)',
+          borderColor: '#f05c5c',
+          borderWidth: 1,
+          borderRadius: 4,
+        },
+        {
+          label: 'Flaky',
+          data: flakyCounts,
+          backgroundColor: 'rgba(245,200,66,0.8)',
+          borderColor: '#f5c842',
+          borderWidth: 1,
+          borderRadius: 4,
+        },
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        x: {
+          stacked: true,
+          grid: { color: '#2e3148' },
+          ticks: { color: '#7b80a0', font: { size: 11 } }
+        },
+        y: {
+          stacked: true,
+          min: 0,
+          max: 1,
+          ticks: { display: false },
+          grid: { color: '#2e3148' }
+        }
+      },
+      plugins: {
+        legend: {
+          display: true,
+          position: 'bottom',
+          labels: {
+            color: '#7b80a0',
+            padding: 16,
+            usePointStyle: true,
+            pointStyle: 'rectRounded',
+            font: { size: 12 }
+          }
+        },
+        tooltip: {
+          backgroundColor: '#1a1d27',
+          borderColor: '#2e3148',
+          borderWidth: 1,
+          titleColor: '#e8eaf0',
+          bodyColor: '#7b80a0',
+          padding: 12,
+          callbacks: {
+            title: (items) => {
+              const idx = items[0].dataIndex;
+              return `Run #${idx + 1} · ${fmtTs(runs[idx].timestamp)}`;
+            },
+            label: (item) => ` ${item.dataset.label}: ${item.raw}`
+          }
+        }
+      }
+    }
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Render
+// ─────────────────────────────────────────────────────────────────────────────
+function render(runs) {
+  const latest = runs[runs.length - 1];
+  const transitionIdx = findTransitionIdx(runs);
+  const totalRuns = runs.length;
+  const passCount = runs.filter(r => r.test_result === 'pass').length;
+  const avgRisk   = Math.round(runs.reduce((a, r) => a + r.risk_score, 0) / totalRuns);
+  const latestRisk = latest ? latest.risk_score : 0;
+
+  // Before/after width ratio
+  const beforePct = transitionIdx >= 0
+    ? Math.round((transitionIdx / totalRuns) * 100)
+    : 50;
+  const afterPct = 100 - beforePct;
+
+  document.getElementById('refresh-info').innerHTML =
+    `<strong>${totalRuns}</strong> runs &nbsp;·&nbsp; Last updated <strong>${fmtTs(latest.timestamp)}</strong>`;
+
+  document.getElementById('main-content').innerHTML = `
+
+    <!-- ── Status badges ────────────────────────────────────────────────── -->
+    <div class="status-row">
+      <div class="stat-card">
+        <div class="stat-label">Latest Risk Score</div>
+        <div class="stat-value ${riskClass(latestRisk)}">${latestRisk}</div>
+        <div class="stat-sub">${riskLabel(latestRisk)} risk · band ${latestRisk <= 30 ? '0–30' : latestRisk <= 60 ? '31–60' : '61–100'}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Latest Test Result</div>
+        <div class="stat-value" style="font-size:20px;padding-top:6px;">
+          <span class="badge badge-${(latest.test_result||'unknown').toLowerCase()}">${latest.test_result || '—'}</span>
+        </div>
+        <div class="stat-sub">${passCount}/${totalRuns} runs passed</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Latest Migration Status</div>
+        <div class="stat-value" style="font-size:20px;padding-top:6px;">
+          <span class="badge badge-${(latest.migration_status||'unknown').toLowerCase()}">${latest.migration_status || '—'}</span>
+        </div>
+        <div class="stat-sub">Run: ${latest.run_id || latest.id}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Average Risk (all runs)</div>
+        <div class="stat-value ${riskClass(avgRisk)}">${avgRisk}</div>
+        <div class="stat-sub">Across ${totalRuns} total runs</div>
+      </div>
+    </div>
+
+    <!-- ── Before / After strip ─────────────────────────────────────────── -->
+    <div class="card" style="padding: 20px 28px;">
+      <div class="card-title">Before vs After RippleTrack</div>
+      <div class="before-after-strip">
+        <div class="ba-before" style="flex: ${beforePct}">
+          ⚠ Before RippleTrack &nbsp;(${transitionIdx < 0 ? '?' : transitionIdx} run${transitionIdx !== 1 ? 's' : ''})
+        </div>
+        <div class="ba-marker"></div>
+        <div class="ba-after" style="flex: ${afterPct}">
+          ✓ After RippleTrack &nbsp;(${transitionIdx < 0 ? '?' : totalRuns - transitionIdx} run${totalRuns - transitionIdx !== 1 ? 's' : ''})
+        </div>
+      </div>
+      <p style="font-size:13px;color:var(--muted);margin-top:8px;">
+        Risk score dropped from
+        <strong style="color:var(--red)">${Math.max(...runs.slice(0, transitionIdx < 0 ? 1 : transitionIdx).map(r => r.risk_score))}</strong>
+        &rarr;
+        <strong style="color:var(--green)">${Math.min(...runs.slice(transitionIdx < 0 ? 0 : transitionIdx).map(r => r.risk_score))}</strong>
+        at the transition point. Tests flipped from
+        <strong style="color:var(--red)">fail</strong> to <strong style="color:var(--green)">pass</strong>.
+        The dashed blue line on the risk chart marks the introduction of RippleTrack.
+      </p>
+    </div>
+
+    <!-- ── Charts row ────────────────────────────────────────────────────── -->
+    <div class="charts-grid">
+      <div class="card">
+        <div class="card-title">Risk Score Over Runs</div>
+        <div class="chart-wrap">
+          <canvas id="riskChart"></canvas>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Test Results per Run</div>
+        <div class="chart-wrap">
+          <canvas id="testChart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Blast radius + table row ─────────────────────────────────────── -->
+    <div class="charts-grid">
+      <div class="card">
+        <div class="card-title">All Runs — History Table</div>
+        <table class="run-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Timestamp</th>
+              <th>Risk Score</th>
+              <th>Test Result</th>
+              <th>Migration Status</th>
+              <th>Blast Radius</th>
+            </tr>
+          </thead>
+          <tbody id="runs-tbody"></tbody>
+        </table>
+      </div>
+      <div class="card">
+        <div class="card-title">Latest Run — Blast Radius Files</div>
+        <div style="margin-bottom:12px;">
+          <span style="font-size:12px;color:var(--muted);">Run: </span>
+          <span style="font-size:12px;font-family:monospace;color:var(--text);">${latest.run_id || latest.id}</span>
+        </div>
+        <div id="blast-list"></div>
+      </div>
+    </div>
+  `;
+
+  // ── Table rows ────────────────────────────────────────────────────────────
+  const tbody = document.getElementById('runs-tbody');
+  runs.forEach((run, i) => {
+    const isTransition = i === transitionIdx;
+    if (isTransition) {
+      const marker = document.createElement('tr');
+      marker.innerHTML = `<td colspan="6"><div class="divider-label">▼ RippleTrack introduced here</div></td>`;
+      tbody.appendChild(marker);
+    }
+    const tr = document.createElement('tr');
+    const fileCount = Array.isArray(run.blast_radius_files) ? run.blast_radius_files.length : 0;
+    tr.innerHTML = `
+      <td class="run-num">#${i + 1}</td>
+      <td class="ts">${fmtTs(run.timestamp)}</td>
+      <td><span class="${riskClass(run.risk_score)}" style="font-weight:700;font-size:15px;">${run.risk_score}</span>
+          <span style="font-size:11px;color:var(--muted);margin-left:4px;">${riskLabel(run.risk_score)}</span></td>
+      <td><span class="badge badge-${(run.test_result||'unknown').toLowerCase()}" style="font-size:11px;padding:3px 10px;">${run.test_result || '—'}</span></td>
+      <td><span class="badge badge-${(run.migration_status||'unknown').toLowerCase()}" style="font-size:11px;padding:3px 10px;">${run.migration_status || '—'}</span></td>
+      <td style="font-size:12px;color:var(--muted);">${fileCount} file${fileCount !== 1 ? 's' : ''}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  // ── Blast radius file list ────────────────────────────────────────────────
+  const blastContainer = document.getElementById('blast-list');
+  const files = Array.isArray(latest.blast_radius_files) ? latest.blast_radius_files : [];
+  const riskFiles = new Set(['src/analytics/eventTracker.ts', 'src/middleware/authGuard.ts']);
+
+  if (files.length === 0) {
+    blastContainer.innerHTML = '<div class="file-empty">✓ No downstream files impacted — blast radius is empty.</div>';
+  } else {
+    const ul = document.createElement('ul');
+    ul.className = 'file-list';
+    files.forEach(f => {
+      const isRisk = riskFiles.has(f) || f.includes('analytics') || f.includes('middleware') || f.includes('auth');
+      const li = document.createElement('li');
+      li.className = 'file-item';
+      li.innerHTML = `
+        <span class="file-dot ${isRisk ? 'file-dot-risk' : 'file-dot-ok'}"></span>
+        <span>${f}</span>
+        ${isRisk ? '<span style="margin-left:auto;font-size:11px;color:var(--red);font-family:sans-serif;font-weight:700;">⚠ risk flag</span>' : ''}
+      `;
+      ul.appendChild(li);
+    });
+    blastContainer.appendChild(ul);
+  }
+
+  // ── Render charts ─────────────────────────────────────────────────────────
+  buildRiskChart(document.getElementById('riskChart').getContext('2d'), runs, transitionIdx);
+  buildTestChart(document.getElementById('testChart').getContext('2d'), runs);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fetch & boot
+// ─────────────────────────────────────────────────────────────────────────────
+async function boot() {
+  try {
+    const res = await fetch(`${API_BASE}/api/runs`);
+    if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
+    const data = await res.json();
+    const runs = data.runs || [];
+    if (runs.length === 0) {
+      showError('No CI run rows found in the database. Run the seed script first: <code>node scripts/seed-history.js</code>');
+      return;
+    }
+    render(runs);
+  } catch (e) {
+    showError(
+      `Could not connect to the API server at <code>${API_BASE}/api/runs</code>.<br><br>` +
+      `Start it with: <code>node scripts/api-server.js</code><br>` +
+      `Then reload this page.<br><br>` +
+      `Error: ${e.message}`
+    );
+  }
+}
+
+function showError(html) {
+  document.getElementById('refresh-info').textContent = 'Connection error';
+  document.getElementById('main-content').innerHTML = `<div class="error-banner">${html}</div>`;
+}
+
+boot();
+</script>
+</body>
+</html>

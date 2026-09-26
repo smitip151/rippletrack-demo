@@ -8,6 +8,7 @@
 #   2. Mount mock_updates JSON into tests/mocks/
 #   3. Apply migration_payload (expand-phase only) against a dummy test database
 #   4. Run the test suite (npm test) and confirm it passes
+#   5. INSERT a new append-only CI run row into ripple_signals (history preserved)
 #
 # Usage:
 #   bash simulate_ci.sh
@@ -67,7 +68,7 @@ fi
 info "Resolved ticket identifier: ${TICKET_ID:-<none — will use latest row>}"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Ensure the Signal Registry DB exists and has seed data
+# Ensure the Signal Registry DB exists; migrate schema if new columns are absent
 # ─────────────────────────────────────────────────────────────────────────────
 NEEDS_SEED=false
 if [ ! -f "$DB_FILE" ]; then
@@ -83,6 +84,44 @@ if [ "$NEEDS_SEED" = true ]; then
     || abort "Failed to bootstrap Signal Registry database."
   ok "Signal Registry seeded from db/setup.sql"
 fi
+
+# Add new columns required for append-only run history (idempotent — ALTER is
+# a no-op if the column already exists; SQLite ignores duplicate-column errors).
+sqlite3 "$DB_FILE" "
+  BEGIN;
+  ALTER TABLE ripple_signals ADD COLUMN run_id TEXT;
+  COMMIT;
+" 2>/dev/null || true
+
+sqlite3 "$DB_FILE" "
+  BEGIN;
+  ALTER TABLE ripple_signals ADD COLUMN blast_radius_files TEXT;
+  COMMIT;
+" 2>/dev/null || true
+
+sqlite3 "$DB_FILE" "
+  BEGIN;
+  ALTER TABLE ripple_signals ADD COLUMN migration_status TEXT;
+  COMMIT;
+" 2>/dev/null || true
+
+sqlite3 "$DB_FILE" "
+  BEGIN;
+  ALTER TABLE ripple_signals ADD COLUMN test_result TEXT;
+  COMMIT;
+" 2>/dev/null || true
+
+sqlite3 "$DB_FILE" "
+  BEGIN;
+  ALTER TABLE ripple_signals ADD COLUMN timestamp TEXT;
+  COMMIT;
+" 2>/dev/null || true
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Generate a unique run_id for this CI execution
+# ─────────────────────────────────────────────────────────────────────────────
+RUN_TIMESTAMP="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+RUN_ID="run-$(date -u +"%Y%m%dT%H%M%SZ")-$$"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # STAGE 1 — Query Signal Registry
@@ -186,10 +225,14 @@ ok "Mock mounting complete."
 # ─────────────────────────────────────────────────────────────────────────────
 step "STAGE 3 — Applying migration payload (expand-phase only) against dummy test database ..."
 
+MIGRATION_OUTCOME="applied"
+
 if [ "$MIGRATION_STRATEGY" != "EXPAND_PHASE_ONLY" ]; then
   info "Migration strategy is '$MIGRATION_STRATEGY' — skipping automated apply (manual review required)."
+  MIGRATION_OUTCOME="pending"
 elif [ -z "$MIGRATION_PAYLOAD" ]; then
   info "No migration_payload present — nothing to apply."
+  MIGRATION_OUTCOME="applied"
 else
   # Fresh dummy DB each run
   rm -f "$DUMMY_DB"
@@ -210,6 +253,7 @@ else
 
   if sqlite3 "$DUMMY_DB" "$SQLITE_SQL" 2>/dev/null; then
     ok "Migration applied successfully to dummy database."
+    MIGRATION_OUTCOME="applied"
   else
     info "Falling back to SQLite-idiomatic form ..."
     ALREADY="$(sqlite3 "$DUMMY_DB" "PRAGMA table_info(users);" | grep -c preferred_language || true)"
@@ -217,8 +261,10 @@ else
       sqlite3 "$DUMMY_DB" \
         "ALTER TABLE users ADD COLUMN preferred_language TEXT DEFAULT 'en-US';"
       ok "Expand-phase column added (SQLite-compatible form)."
+      MIGRATION_OUTCOME="applied"
     else
       ok "Column preferred_language already present — migration is idempotent."
+      MIGRATION_OUTCOME="applied"
     fi
   fi
 
@@ -231,18 +277,93 @@ fi
 # ─────────────────────────────────────────────────────────────────────────────
 step "STAGE 4 — Running test suite (npm test) ..."
 
+TEST_OUTCOME="fail"
+
 cd "$SCRIPT_DIR"
 if npm test; then
   echo ""
   ok "All tests passed."
-  echo ""
-  echo -e "${BOLD}${GREEN}══════════════════════════════════════════════════"
-  echo -e "  RippleTrack CI Signal Sync — SIMULATION COMPLETE"
-  echo -e "══════════════════════════════════════════════════${RESET}"
-  echo ""
+  TEST_OUTCOME="pass"
+else
+  TEST_EXIT=$?
+  TEST_OUTCOME="fail"
+  echo -e "\n${YELLOW}ℹ Tests exited with code $TEST_EXIT — recording result and continuing.${RESET}"
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STAGE 5 — INSERT append-only CI run row into ripple_signals
+# ─────────────────────────────────────────────────────────────────────────────
+step "STAGE 5 — Recording CI run to Signal Registry (append-only) ..."
+
+# Derive blast_radius_files from the ripple_map_summary of the referenced signal
+BLAST_FILES_JSON="$(sqlite3 "$DB_FILE" \
+  "SELECT ripple_map_summary FROM ripple_signals WHERE id = '$SIGNAL_ID' LIMIT 1;" \
+  2>/dev/null || echo '')"
+
+# Extract file paths from ripple_map_summary nodes via Node
+BLAST_RADIUS="$(node -e "
+try {
+  const raw = process.argv[1];
+  if (!raw) { console.log('[]'); process.exit(0); }
+  const summary = JSON.parse(raw);
+  const nodes = (summary.nodes || []).map(n => n.id);
+  console.log(JSON.stringify(nodes));
+} catch(e) {
+  console.log('[]');
+}
+" "$BLAST_FILES_JSON")"
+
+# Build a unique row id for this CI run entry
+CI_RUN_ROW_ID="ci-${RUN_ID}"
+
+sqlite3 "$DB_FILE" "
+INSERT INTO ripple_signals (
+  id,
+  feature_ticket_id,
+  run_id,
+  risk_score,
+  blast_radius_files,
+  migration_status,
+  test_result,
+  timestamp,
+  ripple_map_summary,
+  status,
+  created_at
+) VALUES (
+  '$CI_RUN_ROW_ID',
+  '${TICKET_ID:-none}',
+  '$RUN_ID',
+  $RISK_SCORE,
+  '$(echo "$BLAST_RADIUS" | sed "s/'/''/g")',
+  '$MIGRATION_OUTCOME',
+  '$TEST_OUTCOME',
+  '$RUN_TIMESTAMP',
+  '{}',
+  'MOUNTED_IN_CI',
+  '$RUN_TIMESTAMP'
+);
+"
+
+ok "CI run recorded: $CI_RUN_ROW_ID"
+info "  run_id:           $RUN_ID"
+info "  risk_score:       $RISK_SCORE"
+info "  migration_status: $MIGRATION_OUTCOME"
+info "  test_result:      $TEST_OUTCOME"
+info "  timestamp:        $RUN_TIMESTAMP"
+
+TOTAL_RUNS="$(sqlite3 "$DB_FILE" "SELECT COUNT(*) FROM ripple_signals WHERE run_id IS NOT NULL;" 2>/dev/null || echo '?')"
+info "Total CI run history rows: $TOTAL_RUNS"
+
+echo ""
+echo -e "${BOLD}${GREEN}══════════════════════════════════════════════════"
+echo -e "  RippleTrack CI Signal Sync — SIMULATION COMPLETE"
+echo -e "══════════════════════════════════════════════════${RESET}"
+echo ""
+
+if [ "$TEST_OUTCOME" = "pass" ]; then
   info "Signal $SIGNAL_ID is mounted and all tests are green."
   info "The expand-phase migration is ready to promote to staging."
 else
-  TEST_EXIT=$?
-  abort "Test suite exited with code $TEST_EXIT. Review the output above before promoting signal $SIGNAL_ID."
+  info "Signal $SIGNAL_ID run completed with test_result=$TEST_OUTCOME."
+  info "Review the output above before promoting signal $SIGNAL_ID."
 fi
