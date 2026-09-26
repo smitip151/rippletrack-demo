@@ -1,0 +1,109 @@
+{
+  "origin": {
+    "ticket_id": "PROJ-8821",
+    "field": "preferredLanguage",
+    "model": "User Profile",
+    "prd_contract": {
+      "optional": true,
+      "default_value": "en-US",
+      "constraints": [
+        "Field is strictly optional — users are not required to provide it upon signup.",
+        "System must default to 'en-US' when no language is provided.",
+        "Downstream telemetry and analytics must receive this field if present but must not fail if null or omitted during legacy migrations."
+      ]
+    }
+  },
+  "risk_score": 100,
+  "risk_score_breakdown": {
+    "shared_model_touched": {
+      "weight": 25,
+      "triggered": true,
+      "reason": "UserProfile is consumed by 2 production modules (userRouter.ts, eventTracker.ts); any change ripples to both."
+    },
+    "schema_drift_vs_prd": {
+      "weight": 20,
+      "triggered": true,
+      "reason": "PRD mandates 'preferredLanguage' on the UserProfile model. The TypeScript interface at src/models/UserProfile.ts does not declare it. userRouter.ts already reads/writes it via an unsafe 'as UserProfile' cast — a live type-safety gap independent of this ticket."
+    },
+    "mock_fixture_drift": {
+      "weight": 20,
+      "triggered": true,
+      "reason": "tests/mocks/userFixture.json mirrors the stale interface (id, username, email, createdAt only). No schema validation library (ajv, zod, yup, joi) is installed. The only 'validation' test uses a loose 'in' operator check on two keys — fixture staleness is undetectable."
+    },
+    "untyped_downstream_consumer": {
+      "weight": 15,
+      "triggered": true,
+      "reason": "Both consumers are untyped: eventTracker.ts accepts Record<string,any> with dynamic Object.entries iteration; userRouter.ts uses 'as UserProfile' casts that defeat structural checks. Neither provides compile-time feedback when the model changes."
+    },
+    "no_default_value_in_code": {
+      "weight": 10,
+      "triggered": true,
+      "reason": "PRD specifies default_value 'en-US' but no code-level default exists in the interface, router, or fixture. A consumer receiving undefined for preferredLanguage gets no fallback."
+    },
+    "no_existing_test_coverage": {
+      "weight": 10,
+      "triggered": true,
+      "reason": "Neither test in tests/eventTracker.test.ts references or asserts on preferredLanguage. Adding the field would flow silently through all tests. The crash risk (undefined.toString()) in eventTracker.ts would only be detected incidentally, not by design."
+    }
+  },
+  "nodes": [
+    {
+      "id": "src/models/UserProfile.ts",
+      "type": "model",
+      "children": [
+        "src/api/userRouter.ts",
+        "src/analytics/eventTracker.ts"
+      ],
+      "risk_flags": [
+        "SCHEMA_DRIFT: Interface declares [id, username, email, createdAt] — 'preferredLanguage' is missing despite active production use by userRouter.ts.",
+        "NO_DEFAULT: PRD mandates default 'en-US' but no code-level default is declared on the interface.",
+        "SHARED_MODEL: 2 active consumers; any field addition ripples to both without compile-time guards."
+      ]
+    },
+    {
+      "id": "src/api/userRouter.ts",
+      "type": "consumer",
+      "children": [],
+      "risk_flags": [
+        "UNTYPED: Uses 'as UserProfile' cast on line 57 — defeats TypeScript exhaustive field checking.",
+        "FIELD_AHEAD_OF_INTERFACE: Reads/writes user.preferredLanguage on lines 25, 42, 43, 48 but the field is not in the declared interface.",
+        "SILENT_UPDATE_GAP: PATCH handler will silently ignore any new optional field added to UserProfile — no compile-time signal that update logic needs extending.",
+        "UNSAFE_CAST: req.body cast as 'Partial<UserProfile> & { id: string }' allows objects with missing required fields to be stored silently."
+      ]
+    },
+    {
+      "id": "src/analytics/eventTracker.ts",
+      "type": "consumer",
+      "children": [],
+      "risk_flags": [
+        "UNTYPED: Accepts Record<string,any> — zero compile-time binding to UserProfile.",
+        "DYNAMIC_ITERATION: formatAnalyticsPayload uses Object.entries — every new field on UserProfile is silently consumed with no allowlist.",
+        "RUNTIME_CRASH: Calls .toString().toLowerCase() unconditionally on every value — undefined (from a new optional field) will throw 'Cannot read properties of undefined' at runtime.",
+        "TELEMETRY_LEAK: dispatchEvent passes the raw user object with no field allowlist — new optional fields automatically leak into the telemetry payload.",
+        "NULL_GUARD_MISSING: No guard against null or undefined values for any field."
+      ]
+    },
+    {
+      "id": "tests/mocks/userFixture.json",
+      "type": "fixture",
+      "children": [
+        "tests/eventTracker.test.ts"
+      ],
+      "risk_flags": [
+        "FIXTURE_DRIFT: Contains only [id, username, email, createdAt] — does not include 'preferredLanguage' despite its active use in userRouter.ts.",
+        "NO_SCHEMA_VALIDATOR: No ajv/zod/yup/joi library installed — fixture staleness cannot be automatically detected.",
+        "STALE_RISK: Adding any new optional field to UserProfile will not cause any test to fail due to the omission."
+      ]
+    },
+    {
+      "id": "tests/eventTracker.test.ts",
+      "type": "test",
+      "children": [],
+      "risk_flags": [
+        "NO_COVERAGE_NEW_FIELD: Neither test references, asserts on, or reads any field beyond 'id', 'username', and no-throw behavior.",
+        "FALSE_VALIDATION: 'should validate the mock fixture' only checks 'id' and 'username' with an 'in' operator — this is not schema validation and cannot detect fixture staleness.",
+        "INCIDENTAL_CATCH_ONLY: Runtime crash from undefined.toString() in eventTracker.ts would cause a test to throw, but only incidentally — there is no assertion designed to catch it."
+      ]
+    }
+  ]
+}
