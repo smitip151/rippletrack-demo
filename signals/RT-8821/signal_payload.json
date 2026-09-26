@@ -1,0 +1,167 @@
+{
+  "feature_ticket_id": "RT-8821",
+  "requirement_id": "PROJ-8821",
+  "origin": {
+    "ticket_id": "PROJ-8821",
+    "field": "preferredLanguage",
+    "model": "User Profile",
+    "prd_contract": {
+      "optional": true,
+      "default_value": "en-US",
+      "constraints": [
+        "Field is strictly optional — users are not required to provide it upon signup.",
+        "System must default to 'en-US' when no language is provided.",
+        "Downstream telemetry and analytics must receive this field if present but must not fail if null or omitted during legacy migrations."
+      ]
+    }
+  },
+  "target_model": "src/models/UserProfile.ts",
+  "nodes": [
+    {
+      "id": "src/models/UserProfile.ts",
+      "type": "model",
+      "children": ["src/api/userRouter.ts", "src/analytics/eventTracker.ts"],
+      "risk_flags": [
+        "SCHEMA_DRIFT: Interface declares [id, username, email, createdAt] — 'preferredLanguage' is missing despite active production use by userRouter.ts.",
+        "NO_DEFAULT: PRD mandates default 'en-US' but no code-level default is declared on the interface.",
+        "SHARED_MODEL: 2 active consumers; any field addition ripples to both without compile-time guards."
+      ]
+    },
+    {
+      "id": "src/api/userRouter.ts",
+      "type": "consumer",
+      "children": [],
+      "risk_flags": [
+        "UNTYPED: Uses 'as UserProfile' cast on line 57 — defeats TypeScript exhaustive field checking.",
+        "FIELD_AHEAD_OF_INTERFACE: Reads/writes user.preferredLanguage on lines 25, 42, 43, 48 but the field is not in the declared interface.",
+        "SILENT_UPDATE_GAP: PATCH handler will silently ignore any new optional field added to UserProfile — no compile-time signal that update logic needs extending.",
+        "UNSAFE_CAST: req.body cast as 'Partial<UserProfile> & { id: string }' allows objects with missing required fields to be stored silently."
+      ]
+    },
+    {
+      "id": "src/analytics/eventTracker.ts",
+      "type": "consumer",
+      "children": [],
+      "risk_flags": [
+        "UNTYPED: Accepts Record<string,any> — zero compile-time binding to UserProfile.",
+        "DYNAMIC_ITERATION: formatAnalyticsPayload uses Object.entries — every new field on UserProfile is silently consumed with no allowlist.",
+        "RUNTIME_CRASH: Calls .toString().toLowerCase() unconditionally on every value — undefined (from a new optional field) will throw 'Cannot read properties of undefined' at runtime.",
+        "TELEMETRY_LEAK: dispatchEvent passes the raw user object with no field allowlist — new optional fields automatically leak into the telemetry payload.",
+        "NULL_GUARD_MISSING: No guard against null or undefined values for any field."
+      ]
+    },
+    {
+      "id": "tests/mocks/userFixture.json",
+      "type": "fixture",
+      "children": ["tests/eventTracker.test.ts"],
+      "risk_flags": [
+        "FIXTURE_DRIFT: Contains only [id, username, email, createdAt] — does not include 'preferredLanguage' despite its active use in userRouter.ts.",
+        "NO_SCHEMA_VALIDATOR: No ajv/zod/yup/joi library installed — fixture staleness cannot be automatically detected.",
+        "STALE_RISK: Adding any new optional field to UserProfile will not cause any test to fail due to the omission."
+      ]
+    },
+    {
+      "id": "tests/eventTracker.test.ts",
+      "type": "test",
+      "children": [],
+      "risk_flags": [
+        "NO_COVERAGE_NEW_FIELD: Neither test references, asserts on, or reads any field beyond 'id', 'username', and no-throw behavior.",
+        "FALSE_VALIDATION: 'should validate the mock fixture' only checks 'id' and 'username' with an 'in' operator — this is not schema validation and cannot detect fixture staleness.",
+        "INCIDENTAL_CATCH_ONLY: Runtime crash from undefined.toString() in eventTracker.ts would cause a test to throw, but only incidentally — there is no assertion designed to catch it."
+      ]
+    }
+  ],
+  "target_commit_sha": "90737b7bcffccbd2d73e32254e810f716a570eca",
+  "ripple_map_summary": {
+    "origin": {
+      "ticket_id": "PROJ-8821",
+      "field": "preferredLanguage",
+      "model": "User Profile",
+      "prd_contract": {
+        "optional": true,
+        "default_value": "en-US",
+        "constraints": [
+          "Field is strictly optional — users are not required to provide it upon signup.",
+          "System must default to 'en-US' when no language is provided.",
+          "Downstream telemetry and analytics must receive this field if present but must not fail if null or omitted during legacy migrations."
+        ]
+      }
+    },
+    "risk_score": 100,
+    "nodes_touched": [
+      "src/models/UserProfile.ts",
+      "src/api/userRouter.ts",
+      "src/analytics/eventTracker.ts",
+      "tests/mocks/userFixture.json",
+      "tests/eventTracker.test.ts"
+    ]
+  },
+  "risk_score": 100,
+  "migration_strategy": "EXPAND_PHASE_ONLY",
+  "migration_payload": {
+    "phase": "expand",
+    "description": "Zero-downtime ADD COLUMN with a server-level DEFAULT. No existing rows are rewritten; the column is backfilled by the DB engine at read time. The contract phase (removing the DEFAULT and enforcing NOT NULL) must be deferred to a separate ticket after all application code has shipped and any legacy row scan has been completed.",
+    "sql": [
+      "-- RT-8821 | expand phase | zero-downtime",
+      "-- Safe on Postgres 11+ and MySQL 8.0+ with INSTANT algorithm.",
+      "-- Do NOT run the contract phase (DROP DEFAULT / NOT NULL) in this branch.",
+      "ALTER TABLE user_profiles",
+      "  ADD COLUMN IF NOT EXISTS preferred_language VARCHAR(10)",
+      "  NOT NULL DEFAULT 'en-US';"
+    ],
+    "rollback_sql": [
+      "-- Rollback: drop column if expand phase needs to be reverted",
+      "ALTER TABLE user_profiles",
+      "  DROP COLUMN IF EXISTS preferred_language;"
+    ],
+    "safety_notes": [
+      "ADD COLUMN … DEFAULT is metadata-only on Postgres 11+ (no table rewrite).",
+      "The IF NOT EXISTS guard makes the migration idempotent — safe to replay.",
+      "NOT NULL with a DEFAULT is safe here because no existing row can produce NULL after backfill.",
+      "Do not add a UNIQUE or CHECK constraint in this phase — those require a full table scan.",
+      "Contract phase (enforcing NOT NULL without DEFAULT after backfill verification) is a separate, future ticket."
+    ]
+  },
+  "mock_updates": {
+    "target_file": "tests/mocks/userFixture.json",
+    "rationale": "The fixture currently mirrors the stale interface [id, username, email, createdAt]. Adding preferredLanguage keeps it synchronized with the updated UserProfile interface and prevents silent fixture drift. No schema-validation library is installed (confirmed by test_archaeology.json), so this manual sync is the only mechanism available to maintain fixture fidelity.",
+    "current_content": {
+      "id": "usr_998877",
+      "username": "tifosi_dev",
+      "email": "engineering@tifosicodeworks.com",
+      "createdAt": "2026-09-25T10:00:00.000Z"
+    },
+    "updated_content": {
+      "id": "usr_998877",
+      "username": "tifosi_dev",
+      "email": "engineering@tifosicodeworks.com",
+      "createdAt": "2026-09-25T10:00:00.000Z",
+      "preferredLanguage": "en-US"
+    },
+    "instruction": "Apply the updated_content above to tests/mocks/userFixture.json only after the migration_payload has been deployed to all target environments. Do not write this change to the current branch diff."
+  },
+  "downstream_guards": {
+    "target_file": "src/analytics/eventTracker.ts",
+    "rationale": "formatAnalyticsPayload calls .toString().toLowerCase() unconditionally on every value via Object.entries. A new optional field (preferredLanguage?: string) will be undefined when absent — undefined.toString() throws 'Cannot read properties of undefined'. The guard must intercept null and undefined before the .toString() call. The fix is strictly additive: no existing behavior changes for defined values.",
+    "risk_flags_addressed": [
+      "RUNTIME_CRASH: undefined.toString() for any optional field value",
+      "NULL_GUARD_MISSING: no null/undefined check before coercion",
+      "TELEMETRY_LEAK: raw object passed without value sanitization"
+    ],
+    "patch": {
+      "file": "src/analytics/eventTracker.ts",
+      "description": "Replace the unconditional value.toString().toLowerCase() call with a null-safe coercion. Values that are null or undefined are normalized to the empty string rather than crashing.",
+      "search": "        acc[key] = value.toString().toLowerCase();",
+      "replace": "        acc[key] = (value == null ? '' : String(value)).toLowerCase();",
+      "full_updated_function": [
+        "export function formatAnalyticsPayload(userObject: Record<string, any>) {",
+        "    return Object.entries(userObject).reduce((acc, [key, value]) => {",
+        "        acc[key] = (value == null ? '' : String(value)).toLowerCase();",
+        "        return acc;",
+        "    }, {} as Record<string, string>);",
+        "}"
+      ],
+      "instruction": "Apply this patch to src/analytics/eventTracker.ts only after the migration_payload has been deployed and the mock_updates have been applied. Do not write this change to the current branch diff."
+    }
+  }
+}
