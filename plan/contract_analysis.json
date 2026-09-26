@@ -1,0 +1,13 @@
+{
+  "ticket_id": "PROJ-8821",
+  "target_model": "User Profile",
+  "field_name": "preferredLanguage",
+  "optional": true,
+  "default_value": "en-US",
+  "prd_stated_constraints": [
+    "The preferredLanguage field must be added to the core User Profile model.",
+    "This field is strictly optional — users are not required to provide it upon signup.",
+    "If a language is not explicitly provided, the system must default to 'en-US'.",
+    "Downstream telemetry and analytics systems must receive this field if present, but must not fail if the value is null or omitted during legacy migrations."
+  ]
+}
