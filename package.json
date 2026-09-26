@@ -4,7 +4,10 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "vitest run"
+    "test": "vitest run",
+    "start:api": "node server/index.js",
+    "start:frontend": "npm run dev --prefix frontend",
+    "dev": "node server/index.js & npm run dev --prefix frontend"
   },
   "keywords": [],
   "author": "",
@@ -15,7 +18,11 @@
     "vitest": "^5.0.2"
   },
   "dependencies": {
-    "better-sqlite3": "^13.0.3"
+    "better-sqlite3": "^13.0.3",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "multer": "^2.4.0",
+    "uuid": "^14.0.2"
   },
   "allowScripts": {
     "better-sqlite3@13.0.3": true
