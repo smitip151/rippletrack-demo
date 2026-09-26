@@ -1,0 +1,382 @@
+
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>RippleTrack PRD Library — Ground-Truth Reference</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+    color: #1f2328;
+    background: #ffffff;
+    padding: 32px 16px 48px;
+  }
+  .page { max-width: 760px; margin: 0 auto; }
+  h1 { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+  .subtitle { font-size: 13px; color: #57606a; margin-bottom: 28px; }
+  .prd-card {
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    margin-bottom: 20px;
+    overflow: hidden;
+  }
+  .card-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    background: #f7f8fa;
+    border-bottom: 1px solid #e5e7eb;
+  }
+  .prd-num {
+    font-size: 11px;
+    font-weight: 600;
+    color: #57606a;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+  }
+  .card-title { font-size: 14px; font-weight: 600; flex: 1; }
+  .ticket { font-size: 12px; color: #57606a; font-family: monospace; }
+  .badge {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 12px;
+    white-space: nowrap;
+  }
+  .low    { background: #dcfce7; color: #166534; }
+  .medium { background: #fef9c3; color: #854d0e; }
+  .high   { background: #fee2e2; color: #991b1b; }
+  .ambig  { background: #ede9fe; color: #5b21b6; }
+  .card-body { padding: 14px 16px; }
+  .file-name { font-family: monospace; font-size: 12px; background: #f7f8fa; border: 1px solid #e5e7eb; border-radius: 3px; padding: 1px 5px; }
+  .section-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #57606a;
+    margin-top: 12px;
+    margin-bottom: 4px;
+  }
+  table { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 13px; }
+  th { text-align: left; font-weight: 600; padding: 5px 8px; background: #f7f8fa; border: 1px solid #e5e7eb; font-size: 12px; }
+  td { padding: 5px 8px; border: 1px solid #e5e7eb; vertical-align: top; }
+  .factors { margin: 0; padding-left: 18px; }
+  .factors li { margin-bottom: 2px; }
+  .doc-link { font-size: 12px; font-family: monospace; color: #3b82d4; }
+  .warn { color: #854d0e; font-style: italic; font-size: 13px; }
+  .divider { border: none; border-top: 1px solid #e5e7eb; margin: 24px 0; }
+  .footer { text-align: center; font-size: 12px; color: #57606a; border-top: 1px solid #e5e7eb; padding-top: 16px; margin-top: 32px; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1>RippleTrack — PRD Library Ground-Truth Reference</h1>
+  <p class="subtitle">Team Tifosi CodeWorks · Contract Detective demo inputs · 6 documents covering all risk bands</p>
+
+  
+  <div class="prd-card">
+    <div class="card-header">
+      <span class="prd-num">PRD 1</span>
+      <span class="card-title">User Profile Display Name</span>
+      <span class="ticket">PROJ-9101</span>
+      <span class="badge low">Low Risk</span>
+    </div>
+    <div class="card-body">
+      <span class="doc-link">requirements_prd1_low_risk.docx</span>
+
+      <div class="section-label">Field Contract</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th>Required?</th><th>Default</th></tr>
+        <tr><td><span class="file-name">displayName</span></td><td>string</td><td>Optional</td><td><span class="file-name">""</span> (empty string)</td></tr>
+      </table>
+
+      <div class="section-label">Files the Change Touches</div>
+      <table>
+        <tr><th>File</th><th>Why</th></tr>
+        <tr><td><span class="file-name">src/models/UserProfile.ts</span></td><td>Add the optional field to the interface and factory function default.</td></tr>
+        <tr><td><span class="file-name">tests/mocks/userFixture.json</span></td><td>May need the field added to stay representative, but no existing assertion breaks.</td></tr>
+      </table>
+      <p style="margin-top:6px;font-size:13px">Not touched: <span class="file-name">eventTracker.ts</span>, <span class="file-name">userRouter.ts</span></p>
+
+      <div class="section-label">Expected Risk Band &amp; Factors</div>
+      <p><span class="badge low">Low</span></p>
+      <ul class="factors" style="margin-top:6px">
+        <li>New optional field with a safe default — no breaking change.</li>
+        <li>Zero existing consumers reference <code>displayName</code>.</li>
+        <li>No untyped consumer risk. No schema drift. No mock hard-dependency.</li>
+      </ul>
+    </div>
+  </div>
+
+  
+  <div class="prd-card">
+    <div class="card-header">
+      <span class="prd-num">PRD 2</span>
+      <span class="card-title">User Profile Active Session Token</span>
+      <span class="ticket">PROJ-9234</span>
+      <span class="badge high">High Risk</span>
+    </div>
+    <div class="card-body">
+      <span class="doc-link">requirements_prd2_high_risk.docx</span>
+
+      <div class="section-label">Field Contract</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th>Required?</th><th>Default</th></tr>
+        <tr><td><span class="file-name">sessionToken</span></td><td>string</td><td><strong>Required</strong></td><td><strong>Not specified</strong></td></tr>
+      </table>
+
+      <div class="section-label">Files the Change Touches</div>
+      <table>
+        <tr><th>File</th><th>Why</th></tr>
+        <tr><td><span class="file-name">src/models/UserProfile.ts</span></td><td>Add required field to interface; factory function <em>cannot</em> supply a default — caller must pass one.</td></tr>
+        <tr><td><span class="file-name">src/analytics/eventTracker.ts</span></td><td>PRD mandates the token is forwarded on every event; the untyped consumer will call <code>.toString()</code> on it — will throw if value is <code>null</code> or <code>undefined</code>.</td></tr>
+        <tr><td><span class="file-name">tests/mocks/userFixture.json</span></td><td>Fixture is now missing a required field → mock drift / schema mismatch.</td></tr>
+        <tr><td><span class="file-name">src/api/userRouter.ts</span></td><td>POST /users and PATCH routes must pass a valid token or be updated to reject requests without one.</td></tr>
+      </table>
+
+      <div class="section-label">Expected Risk Band &amp; Factors</div>
+      <p><span class="badge high">High</span></p>
+      <ul class="factors" style="margin-top:6px">
+        <li><strong>Required field, no default</strong> — breaks existing <code>createUser()</code> factory and all call sites that omit it.</li>
+        <li><strong>Untyped consumer</strong> — <span class="file-name">eventTracker.ts</span> blindly calls <code>.toString()</code>; a missing token throws at runtime.</li>
+        <li><strong>Shared model change</strong> — every file importing <code>UserProfile</code> is affected.</li>
+        <li><strong>Mock drift</strong> — fixture does not include <code>sessionToken</code>; tests using the fixture will fail type checks or runtime assertions.</li>
+      </ul>
+    </div>
+  </div>
+
+  
+  <div class="prd-card">
+    <div class="card-header">
+      <span class="prd-num">PRD 3</span>
+      <span class="card-title">Language Field — Type Migration to Enum</span>
+      <span class="ticket">PROJ-9302</span>
+      <span class="badge high">High / Schema Drift</span>
+    </div>
+    <div class="card-body">
+      <span class="doc-link">requirements_prd3_schema_drift.docx</span>
+
+      <div class="section-label">Field Contract</div>
+      <table>
+        <tr><th>Name</th><th>Existing Type</th><th>New Type</th><th>Required?</th><th>Default</th></tr>
+        <tr>
+          <td><span class="file-name">preferredLanguage</span></td>
+          <td>string</td>
+          <td>LanguageCode enum<br /><small>"en-US"|"fr-FR"|"de-DE"|"es-ES"|"ja-JP"</small></td>
+          <td>Optional</td>
+          <td><span class="file-name">"en-US"</span></td>
+        </tr>
+      </table>
+
+      <div class="section-label">Files the Change Touches</div>
+      <table>
+        <tr><th>File</th><th>Why</th></tr>
+        <tr><td><span class="file-name">src/models/UserProfile.ts</span></td><td>Type of <code>preferredLanguage</code> changes from <code>string</code> to the new <code>LanguageCode</code> enum. Schema drift against current type.</td></tr>
+        <tr><td><span class="file-name">src/api/userRouter.ts</span></td><td>Routes that write <code>preferredLanguage</code> accept any string today — must now validate against the enum.</td></tr>
+        <tr><td><span class="file-name">tests/mocks/userFixture.json</span></td><td>Value <code>"en-US"</code> is a valid enum member, but the fixture type annotation (if any) must be updated.</td></tr>
+      </table>
+      <p style="margin-top:6px;font-size:13px"><span class="file-name">eventTracker.ts</span> reads <code>preferredLanguage</code> indirectly (iterates all keys) — enum value serialises to a string, so runtime risk is moderate rather than critical.</p>
+
+      <div class="section-label">Expected Risk Band &amp; Factors</div>
+      <p><span class="badge high">High / Schema Drift</span></p>
+      <ul class="factors" style="margin-top:6px">
+        <li><strong>Schema drift</strong> — an <em>existing</em> field's type narrows from <code>string</code> to enum; any callsite supplying an arbitrary string now violates the contract.</li>
+        <li><strong>Existing consumer impact</strong> — router writes, analytics reads, and the fixture are all coupled to the old type.</li>
+        <li>PRD contract is otherwise well-specified (default stated, optionality stated), so Contract Detective should flag <em>type change on live field</em> as the primary risk factor.</li>
+      </ul>
+    </div>
+  </div>
+
+  
+  <div class="prd-card">
+    <div class="card-header">
+      <span class="prd-num">PRD 4</span>
+      <span class="card-title">User Profile Avatar URL</span>
+      <span class="ticket">PROJ-9415</span>
+      <span class="badge medium">Medium Risk</span>
+    </div>
+    <div class="card-body">
+      <span class="doc-link">requirements_prd4_mock_drift.docx</span>
+
+      <div class="section-label">Field Contract</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th>Required?</th><th>Default</th></tr>
+        <tr><td><span class="file-name">avatarUrl</span></td><td>string</td><td>Optional</td><td><span class="file-name">null</span></td></tr>
+      </table>
+
+      <div class="section-label">Files the Change Touches</div>
+      <table>
+        <tr><th>File</th><th>Why</th></tr>
+        <tr><td><span class="file-name">src/models/UserProfile.ts</span></td><td>Add optional field to interface and factory function.</td></tr>
+        <tr><td><span class="file-name">src/api/userRouter.ts</span></td><td>PRD explicitly requires GET /users/:id to include <code>avatarUrl</code> in the response.</td></tr>
+        <tr><td><span class="file-name">tests/mocks/userFixture.json</span></td><td>PRD explicitly states the fixture must be updated — mock drift risk fires here.</td></tr>
+      </table>
+      <p style="margin-top:6px;font-size:13px">Not touched: <span class="file-name">eventTracker.ts</span> — analytics does not read <code>avatarUrl</code>.</p>
+
+      <div class="section-label">Expected Risk Band &amp; Factors</div>
+      <p><span class="badge medium">Medium</span></p>
+      <ul class="factors" style="margin-top:6px">
+        <li><strong>Mock drift</strong> — PRD contract explicitly names the fixture as a required update target; stale mock is the primary risk.</li>
+        <li><strong>API surface change</strong> — router must be updated, but it's a non-breaking addition (new field in response JSON).</li>
+        <li>No untyped consumer risk. No required-field-without-default risk. Risk is isolated and well-bounded.</li>
+      </ul>
+    </div>
+  </div>
+
+  
+  <div class="prd-card">
+    <div class="card-header">
+      <span class="prd-num">PRD 5</span>
+      <span class="card-title">User Profile Marketing Opt-Out Flag</span>
+      <span class="ticket">PROJ-9508</span>
+      <span class="badge low">Low / No Risk</span>
+    </div>
+    <div class="card-body">
+      <span class="doc-link">requirements_prd5_no_risk.docx</span>
+
+      <div class="section-label">Field Contract</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th>Required?</th><th>Default</th></tr>
+        <tr><td><span class="file-name">marketingOptOut</span></td><td>boolean</td><td>Optional</td><td><span class="file-name">false</span></td></tr>
+      </table>
+
+      <div class="section-label">Files the Change Touches</div>
+      <table>
+        <tr><th>File</th><th>Why</th></tr>
+        <tr><td><span class="file-name">src/models/UserProfile.ts</span></td><td>Add optional boolean field with default to interface and factory.</td></tr>
+      </table>
+      <p style="margin-top:6px;font-size:13px">Not touched: <span class="file-name">eventTracker.ts</span>, <span class="file-name">userRouter.ts</span>, <span class="file-name">tests/mocks/userFixture.json</span> — PRD explicitly defers all consumer integration.</p>
+
+      <div class="section-label">Expected Risk Band &amp; Factors</div>
+      <p><span class="badge low">Low / None</span></p>
+      <ul class="factors" style="margin-top:6px">
+        <li>Optional field with explicit safe default — no breaking change of any kind.</li>
+        <li>Zero downstream consumers named or implied.</li>
+        <li>Risk scorer should return a clean pass. This PRD is specifically designed to prove the scorer does <em>not</em> always flag something.</li>
+      </ul>
+    </div>
+  </div>
+
+  
+  <div class="prd-card">
+    <div class="card-header">
+      <span class="prd-num">PRD 6</span>
+      <span class="card-title">User Profile Account Tier</span>
+      <span class="ticket">PROJ-9617</span>
+      <span class="badge ambig">Ambiguous — Flags Missing Contract</span>
+    </div>
+    <div class="card-body">
+      <span class="doc-link">requirements_prd6_ambiguous.docx</span>
+
+      <div class="section-label">Field Contract (as parseable by Contract Detective)</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th>Required?</th><th>Default</th></tr>
+        <tr>
+          <td><span class="file-name">accountTier</span></td>
+          <td>string <em>(soft enum?)</em></td>
+          <td class="warn">Not stated — neither "optional" nor "required" appears</td>
+          <td class="warn">Not specified — no default value given</td>
+        </tr>
+      </table>
+
+      <div class="section-label">Intentional Ambiguities in the PRD Text</div>
+      <table>
+        <tr><th>Clause</th><th>What's Missing / Vague</th></tr>
+        <tr><td>"…other values may be acceptable depending on future business requirements."</td><td>Enum is not closed. Parser cannot produce a definitive type constraint.</td></tr>
+        <tr><td>"Downstream services should handle the field appropriately."</td><td>No specific consumers named. "Appropriately" is undefined.</td></tr>
+        <tr><td>"Coordinate with the billing team regarding how existing users should be migrated."</td><td>Implies existing rows may be NULL post-deploy, but required/optional is never declared.</td></tr>
+        <tr><td><em>(absent)</em></td><td>No default value for existing profiles is specified anywhere in the document.</td></tr>
+      </table>
+
+      <div class="section-label">Expected Contract Detective Flags</div>
+      <ul class="factors" style="margin-top:6px">
+        <li><strong>Missing optionality declaration</strong> — Contract Detective should raise "cannot determine required vs optional" and refuse to infer.</li>
+        <li><strong>Missing default</strong> — "not specified" should be an explicit Contract Detective output, not a silent assumption of <code>undefined</code>.</li>
+        <li><strong>Open enum</strong> — type is described as a soft set with possible future values; parser should flag "type constraint underspecified".</li>
+        <li><strong>Unnamed consumers</strong> — "downstream services" without names should trigger "consumer tracing not possible — dependency unknown".</li>
+      </ul>
+      <p style="margin-top:8px;font-size:13px;color:#57606a">Risk band is intentionally indeterminate — the point of this PRD is to show the system asking a clarifying question rather than making a guess.</p>
+    </div>
+  </div>
+
+  <hr class="divider" />
+
+  
+  <div class="section-label" style="margin-top:0">Quick Reference — All 6 PRDs</div>
+  <table style="margin-top:8px">
+    <tr>
+      <th>#</th><th>File</th><th>Field</th><th>Type</th><th>Req?</th><th>Default</th><th>Files Touched</th><th>Band</th>
+    </tr>
+    <tr>
+      <td>1</td>
+      <td><span class="file-name">prd1_low_risk.docx</span></td>
+      <td><span class="file-name">displayName</span></td>
+      <td>string</td>
+      <td>Optional</td>
+      <td><span class="file-name">""</span></td>
+      <td>model, (fixture optional)</td>
+      <td><span class="badge low">Low</span></td>
+    </tr>
+    <tr>
+      <td>2</td>
+      <td><span class="file-name">prd2_high_risk.docx</span></td>
+      <td><span class="file-name">sessionToken</span></td>
+      <td>string</td>
+      <td><strong>Required</strong></td>
+      <td><strong>None</strong></td>
+      <td>model, analytics, fixture, router</td>
+      <td><span class="badge high">High</span></td>
+    </tr>
+    <tr>
+      <td>3</td>
+      <td><span class="file-name">prd3_schema_drift.docx</span></td>
+      <td><span class="file-name">preferredLanguage</span></td>
+      <td>string → enum</td>
+      <td>Optional</td>
+      <td><span class="file-name">"en-US"</span></td>
+      <td>model, router, fixture</td>
+      <td><span class="badge high">High (drift)</span></td>
+    </tr>
+    <tr>
+      <td>4</td>
+      <td><span class="file-name">prd4_mock_drift.docx</span></td>
+      <td><span class="file-name">avatarUrl</span></td>
+      <td>string</td>
+      <td>Optional</td>
+      <td><span class="file-name">null</span></td>
+      <td>model, router, fixture</td>
+      <td><span class="badge medium">Medium</span></td>
+    </tr>
+    <tr>
+      <td>5</td>
+      <td><span class="file-name">prd5_no_risk.docx</span></td>
+      <td><span class="file-name">marketingOptOut</span></td>
+      <td>boolean</td>
+      <td>Optional</td>
+      <td><span class="file-name">false</span></td>
+      <td>model only</td>
+      <td><span class="badge low">Low / None</span></td>
+    </tr>
+    <tr>
+      <td>6</td>
+      <td><span class="file-name">prd6_ambiguous.docx</span></td>
+      <td><span class="file-name">accountTier</span></td>
+      <td>string (soft enum)</td>
+      <td class="warn">Not stated</td>
+      <td class="warn">Not specified</td>
+      <td>unknown — consumers unnamed</td>
+      <td><span class="badge ambig">Indeterminate</span></td>
+    </tr>
+  </table>
+
+  <div class="footer">Made with IBM Bob</div>
+</div>
+</body>
+</html>

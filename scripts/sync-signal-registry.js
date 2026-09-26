@@ -7,7 +7,7 @@
  * `ripple_signals` table (the "Signal Registry").
  *
  * Usage:
- *   node scripts/sync-signal-registry.js signals/RT-8821/signal_payload.json [--db ./ripple_track.db]
+ *   node scripts/sync-signal-registry.js signals/RT-8821/signal_payload.json [--db ./db/ripple_track.db]
  *
  * Requires: better-sqlite3
  *   npm install better-sqlite3
@@ -18,7 +18,7 @@ const path = require('path');
 const Database = require('better-sqlite3');
 
 function parseArgs(argv) {
-    const args = { payloadPath: null, dbPath: './ripple_track.db' };
+    const args = { payloadPath: null, dbPath: './db/ripple_track.db' };
     const rest = argv.slice(2);
     for (let i = 0; i < rest.length; i++) {
         if (rest[i] === '--db') {
