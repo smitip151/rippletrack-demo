@@ -1,0 +1,36 @@
+{
+  "target_fixture": "tests/mocks/userFixture.json",
+  "fixture_fields": ["id", "username", "email", "createdAt"],
+  "stale_risk": true,
+  "existing_coverage_for_new_field": false,
+  "analysis": {
+    "fixture": {
+      "fields_present": ["id", "username", "email", "createdAt"],
+      "notes": "Fixture exactly mirrors the current UserProfile interface. It does not include 'preferredLanguage', which is already used by src/api/userRouter.ts but absent from the declared interface. Any new optional field added to UserProfile would simply be absent from this fixture — no test would detect the omission."
+    },
+    "schema_validation": {
+      "library_present": false,
+      "libraries_checked": ["ajv", "zod", "yup", "joi"],
+      "conclusion": "No JSON schema validation library is installed or wired to this fixture. The test named 'should validate the mock fixture against the schema constraints' (eventTracker.test.ts line 12) uses only a manual 'in' operator check for two fields ('id', 'username'). This is not schema validation — it is a loose existence check that would pass even if required fields were missing or new fields were absent."
+    },
+    "test_coverage": {
+      "file": "tests/eventTracker.test.ts",
+      "tests": [
+        {
+          "name": "should successfully format and dispatch the user payload without crashing",
+          "what_it_checks": "That dispatchEvent does not throw, and that the returned payload contains a 'username' key equal to 'tifosi_dev'.",
+          "covers_new_field": false,
+          "risk": "Test only asserts on 'username'. A new field added to UserProfile (e.g. 'preferredLanguage') would flow silently through Object.entries in formatAnalyticsPayload. If the new field had a non-string value, the test would still pass because it does not assert on that field — but production telemetry would be corrupted. If the value were undefined, the test would throw (runtime crash), but only incidentally, not by design."
+        },
+        {
+          "name": "should validate the mock fixture against the schema constraints",
+          "what_it_checks": "That 'id' and 'username' keys exist in the parsed JSON fixture.",
+          "covers_new_field": false,
+          "risk": "Only checks two fields by name. Adding a new required or optional field to UserProfile does not cause this test to fail — the assertion would still be true. This test cannot detect fixture staleness."
+        }
+      ]
+    },
+    "stale_risk_reasoning": "If a new field is added to UserProfile (e.g. 'preferredLanguage?: string' or any non-string type), the fixture will not contain it. Because there is no schema validation, no test will fail due to the omission. The fixture will silently remain out of date. If the new field is non-optional, the fixture would represent an invalid UserProfile object, but no test enforces that constraint.",
+    "existing_coverage_reasoning": "Neither test references, asserts on, or even reads any field beyond 'id', 'username', and the no-throw behavior of dispatchEvent. There is zero coverage for any field not yet added to the model."
+  }
+}

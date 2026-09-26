@@ -1,0 +1,38 @@
+{
+  "target_model": "src/models/UserProfile.ts",
+  "model_interface": {
+    "declared_fields": ["id", "username", "email", "createdAt"],
+    "notes": "The interface is missing 'preferredLanguage', which is already read and written by src/api/userRouter.ts. This is a live type-safety gap independent of any future changes."
+  },
+  "consumers": [
+    {
+      "file": "src/analytics/eventTracker.ts",
+      "delivery_type": "untyped",
+      "risk_flags": [
+        "Accepts 'Record<string, any>' instead of 'UserProfile' — no compile-time binding to the model at all.",
+        "formatAnalyticsPayload uses Object.entries to iterate all keys dynamically; any new field added to UserProfile is silently consumed without awareness.",
+        "Calls value.toString().toLowerCase() on every field unconditionally — non-string fields (booleans, nested objects, arrays, numbers) will not throw at compile time but will produce corrupted or misleading telemetry strings at runtime.",
+        "dispatchEvent passes the raw user object directly to formatAnalyticsPayload with no filtering or field allowlist — new optional fields on UserProfile will automatically leak into the telemetry payload.",
+        "There is no guard against null or undefined values; a new optional field (value: undefined) will throw 'Cannot read properties of undefined' at runtime when .toString() is called."
+      ]
+    },
+    {
+      "file": "src/api/userRouter.ts",
+      "delivery_type": "untyped",
+      "risk_flags": [
+        "Reads and writes 'user.preferredLanguage' on lines 25, 42, 43, 48 — this field is NOT declared on the UserProfile interface, so TypeScript will error unless the file suppresses it (it does, via 'as UserProfile' cast on line 57).",
+        "POST /users handler casts 'req.body' as 'Partial<UserProfile> & { id: string }' and then forces the result 'as UserProfile' — this bypasses exhaustive field checking and allows objects with missing required fields to be stored silently.",
+        "The Map<string, UserProfile> on line 11 is typed correctly, but the values stored via users.set() are created through unsafe casts, so runtime objects may not match the declared interface.",
+        "Comment on line 4-6 acknowledges the model assumption ('preferredLanguage?: string') but this field is not in the actual interface — meaning the file is intentionally operating outside the type contract.",
+        "Any new optional field added to UserProfile will NOT be reflected in the PATCH handler logic, meaning it will be ignored silently in updates — no compile-time signal that the handler needs updating."
+      ]
+    }
+  ],
+  "summary": {
+    "typed_consumers": 0,
+    "untyped_consumers": 2,
+    "highest_risk": "src/analytics/eventTracker.ts — dynamic Object.entries iteration with unconditional toString() will silently corrupt telemetry for any non-string field added to UserProfile, including optional fields with undefined values which will throw at runtime.",
+    "secondary_risk": "src/api/userRouter.ts — operates on a field (preferredLanguage) not in the declared interface, uses unsafe 'as UserProfile' casts that defeat TypeScript's structural checks, and will silently ignore new optional fields in PATCH logic.",
+    "model_gap": "UserProfile interface itself is incomplete — it does not declare 'preferredLanguage' despite active production use of that field in userRouter.ts."
+  }
+}
