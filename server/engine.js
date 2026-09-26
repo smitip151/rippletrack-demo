@@ -44,6 +44,14 @@ const SYNTHETIC_PROFILES = {
     risk_score: 12,
     field_name: 'displayName',
     target_model: 'src/models/UserProfile.ts',
+    risk_score_breakdown: {
+      shared_model_touched:        { weight: 5,  triggered: false, reason: 'displayName is a display-only label; no shared model consumers are affected.' },
+      schema_drift_vs_prd:         { weight: 5,  triggered: false, reason: 'No type or optionality change — existing interface remains valid.' },
+      mock_fixture_drift:          { weight: 2,  triggered: true,  reason: 'Fixture carries the old label string; update is trivial but present.' },
+      untyped_downstream_consumer: { weight: 0,  triggered: false, reason: 'No downstream consumers read this field programmatically.' },
+      no_default_value_in_code:    { weight: 5,  triggered: true,  reason: 'Display label has no fallback default declared in code.' },
+      no_existing_test_coverage:   { weight: 0,  triggered: false, reason: 'Label change requires no test update.' },
+    },
     nodes: [
       {
         id: 'src/models/UserProfile.ts',
@@ -75,6 +83,14 @@ const SYNTHETIC_PROFILES = {
     risk_score: 94,
     field_name: 'paymentDetails',
     target_model: 'src/models/OrderModel.ts',
+    risk_score_breakdown: {
+      shared_model_touched:        { weight: 25, triggered: true,  reason: 'OrderModel has 6 active consumers — removal of legacyPaymentRef and oldCurrency ripples to all of them immediately.' },
+      schema_drift_vs_prd:         { weight: 20, triggered: true,  reason: 'PRD removes 2 declared fields. Code already uses them; gap is live and breaking.' },
+      mock_fixture_drift:          { weight: 20, triggered: true,  reason: 'orderFixture.json has 3 stale fields referencing removed columns. No schema validator installed.' },
+      untyped_downstream_consumer: { weight: 15, triggered: true,  reason: 'revenueTracker.ts accepts Record<string,any>. invoiceWorker.ts deserializes queue payloads with no type guard — will crash on restructured paymentDetails.' },
+      no_default_value_in_code:    { weight: 4,  triggered: false, reason: 'paymentDetails is a required field — no default expected.' },
+      no_existing_test_coverage:   { weight: 10, triggered: true,  reason: 'Removed fields are not asserted on in any test — silent pass before production crash.' },
+    },
     nodes: [
       {
         id: 'src/models/OrderModel.ts',
@@ -118,6 +134,14 @@ const SYNTHETIC_PROFILES = {
     risk_score: 58,
     field_name: 'catalogEntry',
     target_model: 'src/models/ProductCatalog.ts',
+    risk_score_breakdown: {
+      shared_model_touched:        { weight: 15, triggered: true,  reason: 'ProductCatalog is consumed by catalogRouter.ts and catalogSearch.ts — both reference undeclared fields already in production.' },
+      schema_drift_vs_prd:         { weight: 20, triggered: true,  reason: '3 undeclared production fields (sku, tags, imageUrl) not in the TypeScript interface. PRD is retroactively formalising them.' },
+      mock_fixture_drift:          { weight: 15, triggered: true,  reason: 'catalogFixture.json is missing sku, tags, and imageUrl. No schema validator installed.' },
+      untyped_downstream_consumer: { weight: 8,  triggered: true,  reason: 'catalogSearch.ts accepts any — blindly passes all fields to Elasticsearch with no compile-time binding.' },
+      no_default_value_in_code:    { weight: 0,  triggered: false, reason: 'sku has a NOT NULL DEFAULT in the migration — default is covered.' },
+      no_existing_test_coverage:   { weight: 0,  triggered: false, reason: 'Existing tests pass; formalising production fields carries lower test risk than adding new ones.' },
+    },
     nodes: [
       {
         id: 'src/models/ProductCatalog.ts',
@@ -148,6 +172,14 @@ const SYNTHETIC_PROFILES = {
     risk_score: 44,
     field_name: 'channelPreference',
     target_model: 'src/models/NotificationPayload.ts',
+    risk_score_breakdown: {
+      shared_model_touched:        { weight: 10, triggered: true,  reason: 'NotificationPayload has 2 consumers (notificationService.ts, emailWorker.ts) — both need null-safe access to channelPreference.' },
+      schema_drift_vs_prd:         { weight: 5,  triggered: false, reason: 'channelPreference is a genuinely new optional field — no existing production drift detected.' },
+      mock_fixture_drift:          { weight: 20, triggered: true,  reason: 'notificationFixture.json is 3 sprints stale — channelPreference absent. No schema validator installed.' },
+      untyped_downstream_consumer: { weight: 9,  triggered: true,  reason: 'notificationService.ts destructures payload with no type annotation. emailWorker.ts accesses channelPreference without a null guard.' },
+      no_default_value_in_code:    { weight: 0,  triggered: false, reason: 'Default "email" is specified in the PRD and migration — fallback is covered.' },
+      no_existing_test_coverage:   { weight: 0,  triggered: false, reason: 'notification.test.ts exists; channelPreference coverage gap is flagged but does not add to score here.' },
+    },
     nodes: [
       {
         id: 'src/models/NotificationPayload.ts',
@@ -179,6 +211,14 @@ const SYNTHETIC_PROFILES = {
     risk_score: 0,
     field_name: null,
     target_model: null,
+    risk_score_breakdown: {
+      shared_model_touched:        { weight: 0, triggered: false, reason: 'Documentation-only change — no model touched.' },
+      schema_drift_vs_prd:         { weight: 0, triggered: false, reason: 'No interface change.' },
+      mock_fixture_drift:          { weight: 0, triggered: false, reason: 'No fixture change required.' },
+      untyped_downstream_consumer: { weight: 0, triggered: false, reason: 'No consumers affected.' },
+      no_default_value_in_code:    { weight: 0, triggered: false, reason: 'No field added.' },
+      no_existing_test_coverage:   { weight: 0, triggered: false, reason: 'No code change — no test update needed.' },
+    },
     nodes: [],
     contract: {
       field_name: null,
@@ -196,6 +236,14 @@ const SYNTHETIC_PROFILES = {
     risk_score: 47,
     field_name: 'subscriptionTier',
     target_model: 'src/models/AccountModel.ts',
+    risk_score_breakdown: {
+      shared_model_touched:        { weight: 10, triggered: true,  reason: 'AccountModel has 1 consumer (accountRouter.ts) blocked on unresolved optionality.' },
+      schema_drift_vs_prd:         { weight: 20, triggered: true,  reason: 'Section 2.1 and Section 4.3 contradict each other on optionality and default — Contract Detective cannot produce a safe contract.' },
+      mock_fixture_drift:          { weight: 0,  triggered: false, reason: 'No fixture drift detected beyond the ambiguity.' },
+      untyped_downstream_consumer: { weight: 7,  triggered: true,  reason: 'accountRouter.ts has no type annotation — unresolved optionality will silently pass incorrect values.' },
+      no_default_value_in_code:    { weight: 10, triggered: true,  reason: 'Conflicting sections: one mandates default="free", the other mandates no default. Cannot safely choose.' },
+      no_existing_test_coverage:   { weight: 0,  triggered: false, reason: 'Existing tests unaffected until contract is resolved.' },
+    },
     nodes: [
       {
         id: 'src/models/AccountModel.ts',
@@ -290,7 +338,7 @@ function analyzeFromSyntheticProfile(prd) {
   return {
     risk_score:           profile.risk_score,
     risk_band:            riskBand(profile.risk_score),
-    risk_score_breakdown: null,
+    risk_score_breakdown: profile.risk_score_breakdown || null,
     ripple_map: { nodes, edges },
     contract_analysis: {
       ticket_id:           prd.id,
