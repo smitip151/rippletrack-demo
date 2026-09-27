@@ -370,8 +370,8 @@ export default function HomePage({ onLaunchDemo }: HomePageProps): JSX.Element {
 
           {/* Tagline */}
           <p className="home-hero-tagline">
-            Maps the blast radius of a code change<br />
-            <span className="home-hero-tagline-accent">before it's written.</span>
+            Every change leaves a signal.<br />
+            <span className="home-hero-tagline-accent">Track the ripple.</span>
           </p>
 
           {/* CTA pair */}
