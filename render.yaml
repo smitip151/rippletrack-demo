@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: rippletrack-api
+    runtime: node
+    buildCommand: npm install
+    startCommand: node server/index.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DB_PATH
+        value: /var/data/ripple_signals.db
+    disk:
+      name: rippletrack-db
+      mountPath: /var/data
+      sizeGB: 1

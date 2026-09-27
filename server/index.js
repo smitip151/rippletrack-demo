@@ -43,7 +43,7 @@ const { runAnalysis, riskBand }      = require('./engine');
 // ─────────────────────────────────────────────────────────────────────────────
 const PORT    = parseInt(process.env.PORT || '3001', 10);
 const ROOT    = path.join(__dirname, '..');
-const DB_PATH = path.join(ROOT, 'db', 'ripple_signals.db');
+const DB_PATH = process.env.DB_PATH || path.join(ROOT, 'db', 'ripple_signals.db');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Database setup
@@ -605,8 +605,8 @@ function normalizeRunRow(row) {
 // ─────────────────────────────────────────────────────────────────────────────
 const server = http.createServer(app);
 
-server.listen(PORT, '127.0.0.1', () => {
-  console.log(`\n  RippleTrack API  ▶  http://127.0.0.1:${PORT}`);
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`\n  RippleTrack API  ▶  http://0.0.0.0:${PORT}`);
   console.log(`  Team: Tifosi CodeWorks | IBM Bob 2.0 Hackathon\n`);
   console.log('  Endpoints:');
   console.log(`    GET  http://127.0.0.1:${PORT}/health`);
