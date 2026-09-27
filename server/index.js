@@ -225,7 +225,23 @@ const upload = multer({
   limits:  { fileSize: 10 * 1024 * 1024 }, // 10 MB
 });
 
-app.use(cors());
+const allowedOrigins = [
+  'http://localhost:5173',  // Local development
+  'https://your-vercel-app.vercel.app',  // Your Vercel domain
+  // Add any other domains
+];
+
+app.use(cors({
+  origin: function (origin, callback) {
+    // Allow requests with no origin (mobile apps, curl, etc.)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    return callback(new Error('Not allowed by CORS'));
+  },
+  credentials: true,
+}));
 app.use(express.json());
 
 // ── Error helper ──────────────────────────────────────────────────────────────
