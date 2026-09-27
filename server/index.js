@@ -227,7 +227,8 @@ const upload = multer({
 
 const allowedOrigins = [
   'http://localhost:5173',  // Local development
-  'https://your-vercel-app.vercel.app',  // Your Vercel domain
+  'http://127.0.0.1:5173',  // Local development (alternative)
+  'https://rippletrack-demo.vercel.app',  // Your Vercel domain
   // Add any other domains
 ];
 
@@ -257,7 +258,12 @@ function sendError(res, status, message, detail) {
 // GET /health
 // ─────────────────────────────────────────────────────────────────────────────
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', db: DB_PATH, version: '2.0.0', team: 'Tifosi CodeWorks' });
+  res.json({ 
+    status: 'ok', 
+    db: process.env.DATABASE_URL ? 'postgresql (connected)' : 'not configured', 
+    version: '2.0.0', 
+    team: 'Tifosi CodeWorks' 
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
