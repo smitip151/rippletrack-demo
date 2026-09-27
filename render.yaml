@@ -7,9 +7,11 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
-      - key: DB_PATH
-        value: /var/data/ripple_signals.db
-    disk:
-      name: rippletrack-db
-      mountPath: /var/data
-      sizeGB: 1
+      - key: DATABASE_URL
+        fromDatabase:
+          name: rippletrack-db
+          property: connectionString
+
+databases:
+  - name: rippletrack-db
+    plan: free

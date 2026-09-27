@@ -16,14 +16,7 @@ const path     = require('path');
 const fs       = require('fs');
 const { execFile } = require('child_process');
 const { v4: uuidv4 } = require('uuid');
-
-let Database;
-try {
-  Database = require('better-sqlite3');
-} catch (e) {
-  console.error('better-sqlite3 not found. Run: npm install');
-  process.exit(1);
-}
+const { Pool } = require('pg');
 
 let express, cors, multer;
 try {
@@ -31,7 +24,7 @@ try {
   cors    = require('cors');
   multer  = require('multer');
 } catch (e) {
-  console.error('Missing dependencies. Run: npm install express multer cors uuid');
+  console.error('Missing dependencies. Run: npm install express multer cors uuid pg');
   process.exit(1);
 }
 
@@ -41,38 +34,61 @@ const { runAnalysis, riskBand }      = require('./engine');
 // ─────────────────────────────────────────────────────────────────────────────
 // Config
 // ─────────────────────────────────────────────────────────────────────────────
-const PORT    = parseInt(process.env.PORT || '3001', 10);
-const ROOT    = path.join(__dirname, '..');
-const DB_PATH = process.env.DB_PATH || path.join(ROOT, 'db', 'ripple_signals.db');
+const PORT = parseInt(process.env.PORT || '3001', 10);
+const ROOT = path.join(__dirname, '..');
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Database setup
+// Database setup (PostgreSQL via pg Pool)
 // ─────────────────────────────────────────────────────────────────────────────
-function openDb() {
-  const dbExists = fs.existsSync(DB_PATH);
-  const db = new Database(DB_PATH);
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false,
+});
 
-  // Bootstrap schema if fresh DB
-  if (!dbExists) {
-    const setupSql = fs.readFileSync(path.join(ROOT, 'db', 'setup.sql'), 'utf-8');
-    db.exec(setupSql);
-  }
-
-  // Ensure run-history columns exist (idempotent)
-  const extraCols = ['run_id', 'blast_radius_files', 'migration_status', 'test_result', 'timestamp',
-                     'prd_id', 'target_repo_id', 'mode', 'status_detail'];
-  for (const col of extraCols) {
-    try { db.exec(`ALTER TABLE ripple_signals ADD COLUMN ${col} TEXT;`); } catch (_) {}
-  }
-  // ripple_map_json stores the full ripple map for a run
-  try { db.exec(`ALTER TABLE ripple_signals ADD COLUMN ripple_map_json TEXT;`); } catch (_) {}
-  // risk_breakdown_json stores score factor breakdown
-  try { db.exec(`ALTER TABLE ripple_signals ADD COLUMN risk_breakdown_json TEXT;`); } catch (_) {}
-
-  return db;
+async function openDb() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ripple_signals (
+      id                  TEXT PRIMARY KEY,
+      feature_ticket_id   TEXT NOT NULL,
+      target_commit_sha   TEXT,
+      ripple_map_summary  TEXT NOT NULL DEFAULT '{}',
+      risk_score          INTEGER NOT NULL DEFAULT 0,
+      migration_payload   TEXT,
+      migration_strategy  TEXT,
+      mock_updates        TEXT,
+      downstream_guards   TEXT,
+      status              TEXT DEFAULT 'PENDING',
+      created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      run_id              TEXT,
+      blast_radius_files  TEXT,
+      migration_status    TEXT,
+      test_result         TEXT,
+      timestamp           TEXT,
+      prd_id              TEXT,
+      target_repo_id      TEXT,
+      mode                TEXT,
+      status_detail       TEXT,
+      ripple_map_json     TEXT,
+      risk_breakdown_json TEXT
+    )
+  `);
+  // Seed demo row if missing
+  await pool.query(
+    `INSERT INTO ripple_signals (
+      id, feature_ticket_id, target_commit_sha, ripple_map_summary,
+      risk_score, migration_payload, migration_strategy,
+      mock_updates, downstream_guards, status
+    ) VALUES (
+      'RT-8821', 'PROJ-8821', 'demo-sha-0001',
+      '{"origin":"requirements_v3.docx","nodes":[{"id":"UserProfileModel","type":"model","children":["ApiRouter","Analytics","MockServer"]},{"id":"ApiRouter","type":"consumer","delivery":"direct_pr","risk_flags":[]},{"id":"Analytics","type":"consumer","delivery":"signal_registry","risk_flags":["untyped_consumer"]},{"id":"MockServer","type":"test_fixture","delivery":"signal_registry","risk_flags":["stale_contract"]}]}',
+      75, $1, 'EXPAND_PHASE_ONLY',
+      '{"mocks/userFixture.json":{"preferredLanguage":"en-US"}}',
+      '{"analytics/eventTracker.ts":"guard preferredLanguage access with null-safe default ''en-US''"}',
+      'PENDING'
+    ) ON CONFLICT (id) DO NOTHING`,
+    ["ALTER TABLE users ADD COLUMN preferred_language TEXT DEFAULT 'en-US';"]
+  );
 }
-
-const db = openDb();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // In-memory run store (for async progress tracking)
@@ -83,16 +99,18 @@ const runStore = new Map();
 // Subagent display names
 const AGENTS = ['Contract Detective', 'Code Archaeologist', 'Test Archaeologist'];
 
-function getRunFromDb(runId) {
-  return db.prepare(`
-    SELECT id, run_id, prd_id, target_repo_id, mode, risk_score, risk_breakdown_json,
-           blast_radius_files, migration_status, test_result, timestamp, status,
-           ripple_map_json, ripple_map_summary, feature_ticket_id, status_detail
-    FROM ripple_signals
-    WHERE run_id = ?
-    ORDER BY created_at DESC
-    LIMIT 1
-  `).get(runId);
+async function getRunFromDb(runId) {
+  const { rows } = await pool.query(
+    `SELECT id, run_id, prd_id, target_repo_id, mode, risk_score, risk_breakdown_json,
+            blast_radius_files, migration_status, test_result, timestamp, status,
+            ripple_map_json, ripple_map_summary, feature_ticket_id, status_detail
+     FROM ripple_signals
+     WHERE run_id = $1
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [runId]
+  );
+  return rows[0] || null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -153,38 +171,43 @@ async function executeRun(runId, prd, mode, advancedPayload, demoMode) {
     const timestamp  = new Date().toISOString();
     const signalId   = prd ? prd.signal_id : null;
 
-    db.prepare(`
-      INSERT OR REPLACE INTO ripple_signals (
+    await pool.query(
+      `INSERT INTO ripple_signals (
         id, run_id, prd_id, target_repo_id, mode, feature_ticket_id,
         risk_score, risk_breakdown_json,
         blast_radius_files, migration_status, test_result,
         ripple_map_json, ripple_map_summary,
         timestamp, status, created_at
-      ) VALUES (
-        @id, @run_id, @prd_id, @target_repo_id, @mode, @feature_ticket_id,
-        @risk_score, @risk_breakdown_json,
-        @blast_radius_files, @migration_status, @test_result,
-        @ripple_map_json, @ripple_map_summary,
-        @timestamp, @status, @created_at
-      )
-    `).run({
-      id:                   rowId,
-      run_id:               runId,
-      prd_id:               prd ? prd.id : null,
-      target_repo_id:       prd ? prd.target_repo_id : 'unknown',
-      mode:                 mode,
-      feature_ticket_id:    signalId || runId,
-      risk_score:           result.risk_score,
-      risk_breakdown_json:  JSON.stringify(result.risk_score_breakdown || {}),
-      blast_radius_files:   JSON.stringify(blastFiles),
-      migration_status:     result.migration_payload ? 'pending' : 'none',
-      test_result:          'pending',
-      ripple_map_json:      JSON.stringify(result.ripple_map),
-      ripple_map_summary:   JSON.stringify({ nodes_touched: blastFiles, risk_score: result.risk_score }),
-      timestamp:            timestamp,
-      status:               'ANALYSIS_COMPLETE',
-      created_at:           timestamp,
-    });
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+      ON CONFLICT (id) DO UPDATE SET
+        risk_score = EXCLUDED.risk_score,
+        risk_breakdown_json = EXCLUDED.risk_breakdown_json,
+        blast_radius_files = EXCLUDED.blast_radius_files,
+        migration_status = EXCLUDED.migration_status,
+        test_result = EXCLUDED.test_result,
+        ripple_map_json = EXCLUDED.ripple_map_json,
+        ripple_map_summary = EXCLUDED.ripple_map_summary,
+        timestamp = EXCLUDED.timestamp,
+        status = EXCLUDED.status`,
+      [
+        rowId,
+        runId,
+        prd ? prd.id : null,
+        prd ? prd.target_repo_id : 'unknown',
+        mode,
+        signalId || runId,
+        result.risk_score,
+        JSON.stringify(result.risk_score_breakdown || {}),
+        JSON.stringify(blastFiles),
+        result.migration_payload ? 'pending' : 'none',
+        'pending',
+        JSON.stringify(result.ripple_map),
+        JSON.stringify({ nodes_touched: blastFiles, risk_score: result.risk_score }),
+        timestamp,
+        'ANALYSIS_COMPLETE',
+        timestamp,
+      ]
+    );
 
   } catch (err) {
     store.status = 'error';
@@ -316,9 +339,9 @@ app.post('/api/analyze', upload.single('prd_file'), async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/runs
 // ─────────────────────────────────────────────────────────────────────────────
-app.get('/api/runs', (req, res) => {
+app.get('/api/runs', async (req, res) => {
   try {
-    const rows = db.prepare(`
+    const { rows } = await pool.query(`
       SELECT id, run_id, prd_id, target_repo_id, mode, feature_ticket_id,
              risk_score, blast_radius_files, migration_status, test_result,
              timestamp, status
@@ -326,7 +349,7 @@ app.get('/api/runs', (req, res) => {
       WHERE run_id IS NOT NULL AND timestamp IS NOT NULL
       ORDER BY timestamp DESC
       LIMIT 200
-    `).all();
+    `);
 
     const runs = rows.map(r => normalizeRunRow(r));
     res.json({ runs, count: runs.length });
@@ -338,13 +361,13 @@ app.get('/api/runs', (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/runs/:id/status
 // ─────────────────────────────────────────────────────────────────────────────
-app.get('/api/runs/:id/status', (req, res) => {
+app.get('/api/runs/:id/status', async (req, res) => {
   const runId = req.params.id;
   const store = runStore.get(runId);
 
   if (!store) {
     // Check DB (run may have been from a prior server session)
-    const row = getRunFromDb(runId);
+    const row = await getRunFromDb(runId);
     if (!row) {
       return sendError(res, 404, `Run not found: ${runId}`);
     }
@@ -370,7 +393,7 @@ app.get('/api/runs/:id/status', (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/runs/:id
 // ─────────────────────────────────────────────────────────────────────────────
-app.get('/api/runs/:id', (req, res) => {
+app.get('/api/runs/:id', async (req, res) => {
   const runId = req.params.id;
 
   // Check in-memory store first (may be in progress)
@@ -386,12 +409,12 @@ app.get('/api/runs/:id', (req, res) => {
 
   // If completed in memory, use that result
   if (store && store.status === 'complete' && store.result) {
-    const row = getRunFromDb(runId);
-    return res.json(buildRunDetail(runId, row, store.result));
+    const row = await getRunFromDb(runId);
+    return res.json(await buildRunDetail(runId, row, store.result));
   }
 
   // Else load from DB
-  const row = getRunFromDb(runId);
+  const row = await getRunFromDb(runId);
   if (!row) {
     return sendError(res, 404, `Run not found: ${runId}`);
   }
@@ -423,15 +446,16 @@ app.get('/api/runs/:id', (req, res) => {
     downstream_guards:    signalPayload ? signalPayload.downstream_guards : null,
   };
 
-  res.json(buildRunDetail(runId, row, syntheticResult));
+  res.json(await buildRunDetail(runId, row, syntheticResult));
 });
 
-function buildRunDetail(runId, row, result) {
+async function buildRunDetail(runId, row, result) {
   // Get signals for this run
-  const signals = db.prepare(`
-    SELECT * FROM ripple_signals WHERE run_id = ? OR feature_ticket_id = ?
-    ORDER BY created_at ASC LIMIT 50
-  `).all(runId, row ? row.feature_ticket_id : runId);
+  const { rows: signals } = await pool.query(
+    `SELECT * FROM ripple_signals WHERE run_id = $1 OR feature_ticket_id = $2
+     ORDER BY created_at ASC LIMIT 50`,
+    [runId, row ? row.feature_ticket_id : runId]
+  );
 
   return {
     run_id:          runId,
@@ -457,10 +481,10 @@ function buildRunDetail(runId, row, result) {
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/runs/:id/ci-simulate
 // ─────────────────────────────────────────────────────────────────────────────
-app.post('/api/runs/:id/ci-simulate', (req, res) => {
+app.post('/api/runs/:id/ci-simulate', async (req, res) => {
   const runId = req.params.id;
 
-  const row = getRunFromDb(runId);
+  const row = await getRunFromDb(runId);
   if (!row) {
     return sendError(res, 404, `Run not found: ${runId}`);
   }
@@ -486,8 +510,10 @@ app.post('/api/runs/:id/ci-simulate', (req, res) => {
     const after = before.map(t => ({ ...t, result: 'pass', before: false }));
 
     // Update DB
-    db.prepare(`UPDATE ripple_signals SET test_result = ?, migration_status = ? WHERE run_id = ?`)
-      .run(testsPassed ? 'pass' : 'simulated_pass', 'applied', runId);
+    await pool.query(
+      `UPDATE ripple_signals SET test_result = $1, migration_status = $2 WHERE run_id = $3`,
+      [testsPassed ? 'pass' : 'simulated_pass', 'applied', runId]
+    );
 
     return res.json({
       run_id:        runId,
@@ -505,7 +531,7 @@ app.post('/api/runs/:id/ci-simulate', (req, res) => {
     cwd:  ROOT,
     env:  { ...process.env, CI_TICKET_ID: ticketId },
     timeout: 60000,
-  }, (err, stdout, stderr) => {
+  }, async (err, stdout, stderr) => {
     const passed = !err;
 
     // Extract per-test results from npm test output if present
@@ -514,8 +540,10 @@ app.post('/api/runs/:id/ci-simulate', (req, res) => {
     );
 
     // Update DB
-    db.prepare(`UPDATE ripple_signals SET test_result = ?, migration_status = ? WHERE run_id = ?`)
-      .run(passed ? 'pass' : 'fail', 'applied', runId);
+    await pool.query(
+      `UPDATE ripple_signals SET test_result = $1, migration_status = $2 WHERE run_id = $3`,
+      [passed ? 'pass' : 'fail', 'applied', runId]
+    );
 
     res.json({
       run_id:    runId,
@@ -532,15 +560,15 @@ app.post('/api/runs/:id/ci-simulate', (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/signals
 // ─────────────────────────────────────────────────────────────────────────────
-app.get('/api/signals', (req, res) => {
+app.get('/api/signals', async (req, res) => {
   try {
-    const rows = db.prepare(`
+    const { rows } = await pool.query(`
       SELECT id, run_id, prd_id, feature_ticket_id, risk_score,
              blast_radius_files, migration_status, test_result, timestamp, status, mode
       FROM ripple_signals
       ORDER BY created_at DESC
       LIMIT 500
-    `).all();
+    `);
 
     res.json({ signals: rows.map(normalizeRunRow), count: rows.length });
   } catch (err) {
@@ -605,20 +633,27 @@ function normalizeRunRow(row) {
 // ─────────────────────────────────────────────────────────────────────────────
 const server = http.createServer(app);
 
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n  RippleTrack API  ▶  http://0.0.0.0:${PORT}`);
-  console.log(`  Team: Tifosi CodeWorks | IBM Bob 2.0 Hackathon\n`);
-  console.log('  Endpoints:');
-  console.log(`    GET  http://127.0.0.1:${PORT}/health`);
-  console.log(`    GET  http://127.0.0.1:${PORT}/api/prd-library`);
-  console.log(`    POST http://127.0.0.1:${PORT}/api/analyze`);
-  console.log(`    GET  http://127.0.0.1:${PORT}/api/runs`);
-  console.log(`    GET  http://127.0.0.1:${PORT}/api/runs/:id`);
-  console.log(`    GET  http://127.0.0.1:${PORT}/api/runs/:id/status`);
-  console.log(`    POST http://127.0.0.1:${PORT}/api/runs/:id/ci-simulate`);
-  console.log(`    GET  http://127.0.0.1:${PORT}/api/signals\n`);
-  console.log('  Start frontend:  cd frontend && npm run dev\n');
-});
+openDb()
+  .then(() => {
+    server.listen(PORT, '0.0.0.0', () => {
+      console.log(`\n  RippleTrack API  ▶  http://0.0.0.0:${PORT}`);
+      console.log(`  Team: Tifosi CodeWorks | IBM Bob 2.0 Hackathon\n`);
+      console.log('  Endpoints:');
+      console.log(`    GET  http://0.0.0.0:${PORT}/health`);
+      console.log(`    GET  http://0.0.0.0:${PORT}/api/prd-library`);
+      console.log(`    POST http://0.0.0.0:${PORT}/api/analyze`);
+      console.log(`    GET  http://0.0.0.0:${PORT}/api/runs`);
+      console.log(`    GET  http://0.0.0.0:${PORT}/api/runs/:id`);
+      console.log(`    GET  http://0.0.0.0:${PORT}/api/runs/:id/status`);
+      console.log(`    POST http://0.0.0.0:${PORT}/api/runs/:id/ci-simulate`);
+      console.log(`    GET  http://0.0.0.0:${PORT}/api/signals\n`);
+      console.log('  Start frontend:  cd frontend && npm run dev\n');
+    });
+  })
+  .catch(err => {
+    console.error('Failed to connect to database:', err.message);
+    process.exit(1);
+  });
 
 server.on('error', e => {
   if (e.code === 'EADDRINUSE') {

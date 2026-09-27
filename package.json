@@ -18,13 +18,10 @@
     "vitest": "^5.0.2"
   },
   "dependencies": {
-    "better-sqlite3": "^13.0.3",
     "cors": "^2.8.6",
     "express": "^5.2.1",
     "multer": "^2.4.0",
+    "pg": "^8.13.3",
     "uuid": "^14.0.2"
-  },
-  "allowScripts": {
-    "better-sqlite3@13.0.3": true
   }
 }
