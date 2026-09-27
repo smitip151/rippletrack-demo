@@ -5,7 +5,7 @@
 
 ![RippleTrack Cover](frontend/src/assets/RippleTrack_Cover_16x9.png)
 
-[Watch the demo](DEMO_VIDEO_LINK_HERE)
+[Watch the demo](https://youtu.be/2J5eDVudVGU)
 
 ---
 
