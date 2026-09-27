@@ -514,68 +514,31 @@ app.post('/api/runs/:id/ci-simulate', async (req, res) => {
   // Get the feature ticket id to pass to the CI script
   const ticketId = row.feature_ticket_id || 'PROJ-8821';
 
-  // Run the simulate_ci.sh script
-  const scriptPath = path.join(ROOT, 'simulate_ci.sh');
+  // Simulate CI result deterministically based on risk score (production-safe)
+  // The original simulate_ci.sh uses SQLite and npm test which don't work on Render
+  const riskScore = row.risk_score || 0;
+  const testsPassed = riskScore < 80;
 
-  // On Windows we run it via bash if available, otherwise simulate the result
-  const isWindows = process.platform === 'win32';
+  const before = [
+    { test: 'should successfully format and dispatch the user payload without crashing', result: riskScore > 50 ? 'fail' : 'pass', before: true },
+    { test: 'should validate the mock fixture against the schema constraints', result: riskScore > 70 ? 'fail' : 'pass', before: true },
+  ];
+  const after = before.map(t => ({ ...t, result: 'pass', before: false }));
 
-  if (isWindows) {
-    // On Windows, simulate the CI result deterministically based on risk score
-    const riskScore = row.risk_score || 0;
-    const testsPassed = riskScore < 80;
+  // Update DB (PostgreSQL)
+  await pool.query(
+    `UPDATE ripple_signals SET test_result = $1, migration_status = $2 WHERE run_id = $3`,
+    [testsPassed ? 'pass' : 'simulated_pass', 'applied', runId]
+  );
 
-    const before = [
-      { test: 'should successfully format and dispatch the user payload without crashing', result: riskScore > 50 ? 'fail' : 'pass', before: true },
-      { test: 'should validate the mock fixture against the schema constraints', result: riskScore > 70 ? 'fail' : 'pass', before: true },
-    ];
-    const after = before.map(t => ({ ...t, result: 'pass', before: false }));
-
-    // Update DB
-    await pool.query(
-      `UPDATE ripple_signals SET test_result = $1, migration_status = $2 WHERE run_id = $3`,
-      [testsPassed ? 'pass' : 'simulated_pass', 'applied', runId]
-    );
-
-    return res.json({
-      run_id:        runId,
-      simulated:     true,
-      platform_note: 'Windows detected — CI script simulated deterministically.',
-      ticket_id:     ticketId,
-      before,
-      after,
-      overall:       'pass',
-    });
-  }
-
-  // Unix: run the actual script
-  execFile('bash', [scriptPath], {
-    cwd:  ROOT,
-    env:  { ...process.env, CI_TICKET_ID: ticketId },
-    timeout: 60000,
-  }, async (err, stdout, stderr) => {
-    const passed = !err;
-
-    // Extract per-test results from npm test output if present
-    const testLines = (stdout + stderr).split('\n').filter(l =>
-      l.includes('✓') || l.includes('✗') || l.includes('PASS') || l.includes('FAIL') || l.includes('pass') || l.includes('fail')
-    );
-
-    // Update DB
-    await pool.query(
-      `UPDATE ripple_signals SET test_result = $1, migration_status = $2 WHERE run_id = $3`,
-      [passed ? 'pass' : 'fail', 'applied', runId]
-    );
-
-    res.json({
-      run_id:    runId,
-      simulated: false,
-      ticket_id: ticketId,
-      passed,
-      stdout:    stdout.slice(0, 5000),
-      stderr:    stderr.slice(0, 2000),
-      test_lines: testLines,
-    });
+  return res.json({
+    run_id:        runId,
+    simulated:     true,
+    platform_note: 'Production (PostgreSQL) — CI simulated deterministically based on risk score.',
+    ticket_id:     ticketId,
+    before,
+    after,
+    overall:       testsPassed ? 'pass' : 'fail',
   });
 });
 
